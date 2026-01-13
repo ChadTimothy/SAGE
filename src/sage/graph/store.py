@@ -205,7 +205,14 @@ class GraphStore:
             db_path: Path to SQLite database file, or ":memory:" for in-memory.
         """
         self.db_path = str(db_path)
-        self._connection: Optional[sqlite3.Connection] = None
+        self._is_memory = self.db_path == ":memory:"
+        self._persistent_conn: Optional[sqlite3.Connection] = None
+
+        # For in-memory DBs, create persistent connection immediately
+        if self._is_memory:
+            self._persistent_conn = sqlite3.connect(":memory:")
+            self._persistent_conn.row_factory = sqlite3.Row
+
         self._init_db()
 
     def _init_db(self) -> None:
@@ -215,17 +222,27 @@ class GraphStore:
 
     @contextmanager
     def connection(self):
-        """Get a database connection with proper cleanup."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        """Get a database connection with proper cleanup.
+
+        For in-memory databases, returns the persistent connection.
+        For file-based databases, creates a new connection each time.
+        """
+        if self._is_memory:
+            # In-memory: use persistent connection, don't close it
+            yield self._persistent_conn
+            self._persistent_conn.commit()
+        else:
+            # File-based: create new connection each time
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
 
     # =========================================================================
     # Learner Operations
