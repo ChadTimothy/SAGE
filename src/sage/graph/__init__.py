@@ -35,8 +35,11 @@ from .models import (
     # Utilities
     gen_id,
 )
+from .store import GraphStore
 
 __all__ = [
+    # Store
+    "GraphStore",
     # Enums
     "AgeGroup",
     "ApplicationStatus",
