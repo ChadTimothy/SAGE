@@ -36,10 +36,15 @@ from .models import (
     gen_id,
 )
 from .store import GraphStore
+from .queries import GraphQueries, LearnerState, RelatedConcept, PastApplication
 
 __all__ = [
-    # Store
+    # Store and Queries
     "GraphStore",
+    "GraphQueries",
+    "LearnerState",
+    "RelatedConcept",
+    "PastApplication",
     # Enums
     "AgeGroup",
     "ApplicationStatus",
