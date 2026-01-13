@@ -1,0 +1,292 @@
+# SAGE Project Context
+
+## What Is This?
+
+SAGE is an AI tutor that teaches through conversation, not curriculum. It asks "What do you want to be able to DO?" then finds gaps through dialogue and fills them one at a time until the learner can actually do the thing.
+
+## Core Philosophy
+
+- **Iterate/Discover, not Path-Upfront**: No pre-planned curriculum. Gaps are found through conversation.
+- **Outcome-Driven**: Progress = "can you do the thing?" not "steps completed"
+- **Earned Knowledge**: Learners demonstrate understanding (Proofs) before moving on
+- **Personal Learning Graph**: Grows from conversations, tracks what's been learned and how it connects
+
+## Key Architecture Decisions
+
+| Decision | Choice | Why |
+|----------|--------|-----|
+| Learning approach | Iterate/Discover | More conversational, handles unknown unknowns, respects learner agency |
+| Data storage | SQLite + JSON fields | Simple for MVP, easy to query, no external deps |
+| Models | Pydantic | Type safety, validation, easy serialization |
+| Graph structure | 6 node types, 6 edge types | Minimal complexity for iterate approach |
+
+## The Core Loop
+
+```
+0. CHECK-IN → "How are you showing up today?" (every session)
+   Gather Set/Setting/Intention, adapt approach
+1. OUTCOME → "What do you want to be able to do?"
+2. FRAME (light) → "That typically involves X, Y, Z—let's see where you are"
+3. PROBE → "What's blocking you from this right now?"
+4. TEACH → Fill that specific gap (adapted to context)
+5. VERIFY → "Do you actually get this now?" → Proof created
+6. CHECK OUTCOME → "Can you do the thing yet?"
+   If yes → Done
+   If no → Loop back to PROBE
+```
+
+## SAGE Personality
+
+- Direct, gets to the point
+- Respects intelligence, doesn't talk down
+- Honest about gaps without judgment
+- Slightly dry, efficient
+- Think JARVIS, not professor
+
+## Key Files
+
+```
+SAGE/
+├── CLAUDE.md                              ← This file (project context)
+├── docs/
+│   ├── narrative/SAGE_narrative.md        ← Product story, user-facing explanation
+│   └── architecture/
+│       ├── system-design.md               ← High-level architecture, core loop, components
+│       ├── data-model.md                  ← Graph nodes/edges, SQLite schema, Pydantic models
+│       └── context-management.md          ← Runtime context, what AI needs each turn
+├── data/
+│   └── prompts/                           ← LLM prompt templates (per mode)
+│       ├── system.md                      ← SAGE personality + capabilities
+│       ├── check_in.md                    ← Gather Set/Setting/Intention
+│       ├── followup.md                    ← Ask about past applications
+│       ├── outcome_discovery.md           ← Find what they want to DO
+│       ├── framing.md                     ← Light sketch of territory
+│       ├── probing.md                     ← Find the gap
+│       ├── teaching.md                    ← Fill the gap (with adaptation)
+│       ├── verification.md                ← Check understanding, create proof
+│       └── outcome_check.md               ← Can they do the thing?
+└── src/
+    ├── core/                              ← Config, utilities
+    ├── graph/                             ← Learning Graph (models, store, queries)
+    ├── dialogue/                          ← Conversation engine (modes, voice)
+    ├── gaps/                              ← Gap finding (replaces path planning)
+    ├── assessment/                        ← Probing, verification, proof creation
+    ├── learner/                           ← Learner state, sessions
+    └── api/                               ← CLI interface
+```
+
+## Data Model Summary
+
+**Nodes:**
+- `Learner` - The person (profile, preferences, current state, insights)
+  - Includes `age_group` (child/teen/adult) and `skill_level` (beginner/intermediate/advanced)
+  - These affect vocabulary, examples, tone, pace, and teaching depth
+- `Outcome` - A goal ("price freelance services confidently")
+- `Concept` - A gap that was found and taught
+- `Proof` - Verified demonstration of understanding
+- `Session` - A conversation (includes context + messages)
+- `ApplicationEvent` - Real-world application of learning with follow-up tracking
+
+**Session includes:**
+- `context` - Set/Setting/Intention captured at session start (including physical environment)
+- `messages` - Full conversation history for continuity
+
+**ApplicationEvent enables the Learning Feedback Loop:**
+```
+Learn concept → Apply in real world → Report back → Identify gaps → Fill gaps → Apply better
+      ↑                                                                              │
+      └──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Edges:**
+- `requires` - Outcome → Concept (gap discovered for this goal)
+- `relates_to` - Concept ↔ Concept (cross-domain connections)
+- `demonstrated_by` - Concept → Proof
+- `explored_in` - Concept → Session
+- `builds_on` - Outcome → Outcome (goals that connect)
+- `applied_in` - Concept → ApplicationEvent (real-world usage)
+
+## Build Order
+
+1. **Graph Store** ← START HERE
+   - Pydantic models (`src/graph/models.py`)
+   - SQLite store with schema (`src/graph/store.py`)
+   - Graph queries (`src/graph/queries.py`)
+
+2. **Context Manager**
+   - FullContext loader (session start + pending follow-ups)
+   - TurnContext builder (each turn)
+   - State persistence after turns
+   - LearnerInsights tracking
+   - Application event tracking and follow-up logic
+
+3. **Prompts**
+   - SAGE system prompt (voice, personality)
+   - Check-in prompt (gather Set/Setting/Intention)
+   - Mode-specific prompts (discovery, probing, teaching, verification)
+   - Adaptation instructions (how to adjust for context)
+
+4. **Dialogue Shell**
+   - Conversation loop with LLM
+   - Structured output parsing (SAGEResponse)
+   - Mode detection and transitions
+   - State change detection
+
+5. **Gap Finder**
+   - Probing question generation
+   - Gap identification from responses
+   - Connection discovery (to proven concepts)
+
+6. **Assessment**
+   - Verification questions
+   - Proof creation
+   - Confidence scoring
+
+7. **Integration**
+   - Full loop end-to-end
+   - Cross-session continuity
+   - Insights learning over time
+
+## Technical Stack
+
+- **Python**: 3.11+
+- **Data Models**: Pydantic v2
+- **Database**: SQLite (built-in)
+- **LLM**: OpenAI SDK (works with Grok/xAI, OpenAI, Anthropic via base_url swap)
+- **CLI**: Typer
+
+### LLM Configuration
+
+Using OpenAI SDK as the standard interface. Provider configured via environment:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key=os.getenv("LLM_API_KEY"),
+    base_url=os.getenv("LLM_BASE_URL", "https://api.x.ai/v1"),  # Default to Grok
+)
+
+# Works with:
+# - Grok: base_url="https://api.x.ai/v1", model="grok-4"
+# - OpenAI: base_url="https://api.openai.com/v1", model="gpt-4"
+# - Any OpenAI-compatible endpoint
+```
+
+## Current State
+
+- [x] Narrative document complete
+- [x] System design complete (iterate/discover approach)
+- [x] Data model complete (includes Session Context, Messages, LearnerInsights)
+- [x] Context management design complete (what AI needs each turn, structured output strategy)
+- [x] Prompt templates created (starter templates for all 8 modes)
+- [ ] Graph store implementation
+- [ ] Context manager implementation
+- [ ] Dialogue engine
+- [ ] Gap finder
+- [ ] Assessment engine
+- [ ] CLI
+
+## Key Concepts to Remember
+
+### Set, Setting, Intention (Per-Session)
+
+The same person learns differently depending on their current state. SAGE checks in at the START of each session to gather context and adapt.
+
+**SET** — Current mental/physical state
+- Energy level (low/medium/high)
+- Mindset ("stressed about deadline", "curious and relaxed", "nervous about tomorrow")
+- Time available ("15 minutes", "couple hours", "open-ended")
+
+**SETTING** — Current environment
+- Where they are ("quiet office", "commuting", "home evening")
+- Can they speak out loud? (affects practice exercises)
+- Distraction level ("focused", "some interruptions", "noisy")
+- Device ("desktop", "phone" - affects content format)
+- Baseline preferences stored in Learner profile
+
+**INTENTION** — Purpose for THIS session
+- Strength: curious (exploring) → learning (active) → urgent (high stakes)
+- Specific goal: what they want from this session
+
+**How this adapts learning:**
+
+| Context | Adaptation |
+|---------|------------|
+| Low energy, 15 min | Shorter chunks, practical focus, quick wins |
+| High energy, open time | Deeper exploration, can follow tangents |
+| Urgent deadline | Skip theory, focus on immediate applicability |
+| Stressed mindset | Gentler pace, smaller steps, more encouragement |
+
+### Runtime Context (What AI Needs Each Turn)
+
+**Loaded at session start (eager):**
+- Learner profile + insights (patterns learned over time)
+- All proven concepts (what they KNOW)
+- Active outcome and progress
+- Last session for continuity
+- All concept relations (for finding connections)
+- Pending follow-ups (applications that need checking on)
+- Completed applications (for teaching context)
+
+**Built each turn:**
+- Current mode and session context (Set/Setting/Intention)
+- Recent messages (last 15-20)
+- Relevant proven concepts for current topic
+- Relevant past applications for current topic
+- Adaptation hints based on state
+
+**LLM outputs structured response:**
+- Message to show user
+- Mode transitions
+- Gaps identified, proofs earned, connections discovered
+- State changes detected (energy drop, confusion, etc.)
+- Applications detected (upcoming real-world use)
+- Follow-up responses (how past applications went)
+
+**Key insight:** The LLM both USES context AND UPDATES it. It monitors for state changes, discovers connections, tracks applications, and reports them back for persistence.
+
+### Application Tracking (The Learning Feedback Loop)
+
+Real learning is proven in application. SAGE tracks when learners mention they'll apply something, then follows up:
+
+**At session start:** Check for pending follow-ups before check-in
+- "Before we dive in—you had that pricing call on Tuesday. How did it go?"
+
+**During conversation:** Detect application signals
+- "I have a pricing call tomorrow" → create ApplicationEvent
+- "I'm meeting with a client Friday" → link relevant concepts
+
+**On follow-up:** Turn struggles into teachable moments
+- What worked? → reinforces learning
+- What struggled? → reveals new gaps to fill
+- Pattern detection: "You've caved on discounts 3 times now—let's make this a focus"
+
+**In teaching:** Reference past applications
+- "Last time you had a pricing call, you said X happened. Let's make sure that doesn't happen again."
+
+### What's NOT in this system
+- No pre-built prerequisite database
+- No upfront path planning
+- No `current_step` tracking
+- No topological sorting of concepts
+
+The graph records **what happened**, not **what's planned**.
+
+## Testing Approach
+
+- Unit tests for graph operations
+- Integration tests for conversation flows
+- Mock LLM responses for deterministic testing
+
+## When Resuming This Project
+
+1. Read this file first
+2. Check `docs/architecture/system-design.md` for the core loop
+3. Check `docs/architecture/data-model.md` for schema details
+4. Look at Build Order above to see what's next
+5. Start where we left off
+
+---
+
+*Last updated: Architecture complete with Application Tracking, pre-implementation*
