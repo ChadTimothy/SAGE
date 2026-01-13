@@ -37,8 +37,11 @@ from .models import (
 )
 from .store import GraphStore
 from .queries import GraphQueries, LearnerState, RelatedConcept, PastApplication
+from .learning_graph import LearningGraph
 
 __all__ = [
+    # Main Interface
+    "LearningGraph",
     # Store and Queries
     "GraphStore",
     "GraphQueries",
