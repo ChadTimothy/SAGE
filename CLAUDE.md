@@ -65,14 +65,17 @@ SAGE/
 │       ├── teaching.md                    ← Fill the gap (with adaptation)
 │       ├── verification.md                ← Check understanding, create proof
 │       └── outcome_check.md               ← Can they do the thing?
-└── src/
-    ├── core/                              ← Config, utilities
-    ├── graph/                             ← Learning Graph (models, store, queries)
-    ├── dialogue/                          ← Conversation engine (modes, voice)
-    ├── gaps/                              ← Gap finding (replaces path planning)
-    ├── assessment/                        ← Probing, verification, proof creation
-    ├── learner/                           ← Learner state, sessions
-    └── api/                               ← CLI interface
+├── src/sage/                              ← Python package
+│   ├── core/                              ← Config, utilities, logging
+│   ├── graph/                             ← Learning Graph (models, store, queries)
+│   ├── dialogue/                          ← Conversation engine (modes, voice)
+│   ├── gaps/                              ← Gap finding (replaces path planning)
+│   ├── assessment/                        ← Probing, verification, proof creation
+│   ├── learner/                           ← Learner state, sessions
+│   └── api/                               ← CLI interface
+├── tests/                                 ← Test suite
+├── pyproject.toml                         ← Project config and dependencies
+└── .env.example                           ← Environment variable template
 ```
 
 ## Data Model Summary
@@ -279,14 +282,88 @@ The graph records **what happened**, not **what's planned**.
 - Integration tests for conversation flows
 - Mock LLM responses for deterministic testing
 
+## Project Management
+
+### GitHub Repository
+- **Repo:** https://github.com/ChadTimothy/SAGE
+- **Project Board:** https://github.com/users/ChadTimothy/projects/2
+
+### Issue-Driven Development
+
+Every piece of work has a GitHub issue. This enables:
+- Context preservation across AI sessions
+- Clear scope and acceptance criteria
+- Progress tracking via milestones
+- Session handoff without context loss
+
+### Milestones (aligned with Build Order)
+
+| Milestone | Focus | Issues |
+|-----------|-------|--------|
+| M1: Graph Store | Pydantic models, SQLite, queries | #1-4, #22 |
+| M2: Context Manager | FullContext, TurnContext, persistence | #5-8 |
+| M3: Dialogue Shell | Prompts, structured output, modes | #9-12 |
+| M4: Gap Finder | Probing, gap identification, connections | #13-15 |
+| M5: Assessment | Verification, proofs, confidence | #16-18 |
+| M6: Integration & CLI | Full loop, continuity, CLI | #19-21 |
+
+### AI Session Protocol
+
+**Starting a session:**
+1. Read this file (CLAUDE.md)
+2. Check GitHub Project board for current state
+3. Look at in-progress issues
+4. Continue from where we left off
+
+**During a session:**
+1. Work on one issue at a time
+2. Update issue with progress notes
+3. Create commits with issue references (`#1`, `#2`, etc.)
+4. Move issues on board as status changes
+
+**Ending a session:**
+1. Commit all work in progress
+2. Update current issue with session notes (what was done, what's next)
+3. If mid-task, add clear handoff note for next session
+
+**Handoff note format:**
+```
+## Session Handoff - [Date]
+
+### Completed This Session
+- [What was accomplished]
+
+### Current State
+- Working on: [Issue #X]
+- File in progress: [path/to/file.py]
+- Next step: [Specific next action]
+
+### Blockers/Notes
+- [Any issues encountered or decisions needed]
+```
+
+### Why This Approach
+
+Based on research into AI-assisted development best practices:
+
+1. **Context Window Limits:** AI sessions may need to restart. Issues preserve context.
+2. **Single Source of Truth:** GitHub issues are the authoritative state, not conversation history.
+3. **Handoff Continuity:** Clear session notes enable smooth transitions.
+4. **Progress Visibility:** Milestones and board show real progress.
+
+Sources:
+- [Agentic Project Management](https://github.com/sdi2200262/agentic-project-management) - Context retention across sessions
+- [GitHub Best Practices](https://docs.github.com/en/issues/planning-and-tracking-with-projects/learning-about-projects/best-practices-for-projects) - Project organization
+- [Solo Developer Guide](https://www.bitovi.com/blog/github-projects-for-solo-developers) - Kanban for individual work
+
 ## When Resuming This Project
 
 1. Read this file first
-2. Check `docs/architecture/system-design.md` for the core loop
-3. Check `docs/architecture/data-model.md` for schema details
-4. Look at Build Order above to see what's next
-5. Start where we left off
+2. Check GitHub Project board: https://github.com/users/ChadTimothy/projects/2
+3. Look at in-progress issues for current state
+4. Read the most recent issue comments for handoff notes
+5. Continue from where we left off
 
 ---
 
-*Last updated: Architecture complete with Application Tracking, pre-implementation*
+*Last updated: GitHub project setup complete, ready for implementation*
