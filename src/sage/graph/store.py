@@ -169,21 +169,6 @@ CREATE INDEX IF NOT EXISTS idx_applications_followup ON application_events(statu
 # =============================================================================
 
 
-def _serialize_value(value):
-    """Serialize a value for SQLite storage."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    if isinstance(value, BaseModel):
-        return value.model_dump_json()
-    if isinstance(value, (list, dict)):
-        return json.dumps(value, default=str)
-    return value
-
-
 def _deserialize_json(value: Optional[str]) -> Optional[dict | list]:
     """Deserialize a JSON string from SQLite."""
     if value is None:
@@ -886,30 +871,23 @@ class GraphStore:
         self, from_id: str, edge_type: Optional[str] = None
     ) -> list[Edge]:
         """Get all edges from a node."""
-        with self.connection() as conn:
-            if edge_type:
-                rows = conn.execute(
-                    "SELECT * FROM edges WHERE from_id = ? AND edge_type = ?",
-                    (from_id, edge_type),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM edges WHERE from_id = ?", (from_id,)
-                ).fetchall()
-            return [self._row_to_edge(row) for row in rows]
+        return self._get_edges("from_id", from_id, edge_type)
 
     def get_edges_to(self, to_id: str, edge_type: Optional[str] = None) -> list[Edge]:
         """Get all edges to a node."""
+        return self._get_edges("to_id", to_id, edge_type)
+
+    def _get_edges(
+        self, id_column: str, id_value: str, edge_type: Optional[str] = None
+    ) -> list[Edge]:
+        """Get edges by ID column with optional edge type filter."""
         with self.connection() as conn:
+            query = f"SELECT * FROM edges WHERE {id_column} = ?"
+            params: tuple = (id_value,)
             if edge_type:
-                rows = conn.execute(
-                    "SELECT * FROM edges WHERE to_id = ? AND edge_type = ?",
-                    (to_id, edge_type),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM edges WHERE to_id = ?", (to_id,)
-                ).fetchall()
+                query += " AND edge_type = ?"
+                params = (id_value, edge_type)
+            rows = conn.execute(query, params).fetchall()
             return [self._row_to_edge(row) for row in rows]
 
     def _row_to_edge(self, row: sqlite3.Row) -> Edge:

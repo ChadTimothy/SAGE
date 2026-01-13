@@ -1,13 +1,11 @@
 """Configuration for SAGE using environment variables."""
 
 import logging
-import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -21,46 +19,42 @@ class Settings(BaseSettings):
         SAGE_LOG_LEVEL: Logging level (default: INFO)
     """
 
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     # LLM Configuration
     llm_api_key: str = Field(
         default="",
+        validation_alias="LLM_API_KEY",
         description="API key for the LLM provider",
     )
     llm_base_url: str = Field(
         default="https://api.x.ai/v1",
+        validation_alias="LLM_BASE_URL",
         description="Base URL for the LLM API (Grok, OpenAI, or compatible)",
     )
     llm_model: str = Field(
         default="grok-3-mini",
+        validation_alias="LLM_MODEL",
         description="Model name to use",
     )
 
     # Database Configuration
     db_path: Path = Field(
         default=Path("./data/sage.db"),
+        validation_alias="SAGE_DB_PATH",
         description="Path to SQLite database",
     )
 
     # Logging
     log_level: str = Field(
         default="INFO",
+        validation_alias="SAGE_LOG_LEVEL",
         description="Logging level (DEBUG, INFO, WARNING, ERROR)",
     )
-
-    class Config:
-        env_prefix = ""
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
-
-        # Map environment variable names to field names
-        fields = {
-            "llm_api_key": {"env": "LLM_API_KEY"},
-            "llm_base_url": {"env": "LLM_BASE_URL"},
-            "llm_model": {"env": "LLM_MODEL"},
-            "db_path": {"env": "SAGE_DB_PATH"},
-            "log_level": {"env": "SAGE_LOG_LEVEL"},
-        }
 
     @property
     def log_level_int(self) -> int:

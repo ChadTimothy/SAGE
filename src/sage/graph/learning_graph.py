@@ -306,8 +306,7 @@ class LearningGraph:
 
     def has_proof(self, concept_id: str) -> bool:
         """Check if a concept has any proofs."""
-        proofs = self._store.get_proofs_by_concept(concept_id)
-        return len(proofs) > 0
+        return bool(self._store.get_proofs_by_concept(concept_id))
 
     # =========================================================================
     # Session Operations

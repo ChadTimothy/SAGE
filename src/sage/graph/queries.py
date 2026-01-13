@@ -44,13 +44,28 @@ class RelatedConcept:
 
 @dataclass
 class PastApplication:
-    """A past application of a concept for teaching context."""
+    """A past application of a concept for teaching context.
+
+    Wraps ApplicationEvent for convenience access to follow-up data.
+    """
 
     event: ApplicationEvent
-    outcome_result: Optional[str]
-    what_worked: Optional[str]
-    what_struggled: Optional[str]
-    insights: Optional[str]
+
+    @property
+    def outcome_result(self) -> Optional[str]:
+        return self.event.outcome_result
+
+    @property
+    def what_worked(self) -> Optional[str]:
+        return self.event.what_worked
+
+    @property
+    def what_struggled(self) -> Optional[str]:
+        return self.event.what_struggled
+
+    @property
+    def insights(self) -> Optional[str]:
+        return self.event.insights
 
 
 class GraphQueries:
@@ -223,22 +238,12 @@ class GraphQueries:
                     (learner_id,),
                 ).fetchall()
 
-        result = []
-        for row in rows:
-            event = self.store._row_to_application_event(row)
-            # Check if this concept is in the event's concept_ids
-            if concept_id in event.concept_ids:
-                result.append(
-                    PastApplication(
-                        event=event,
-                        outcome_result=event.outcome_result,
-                        what_worked=event.what_worked,
-                        what_struggled=event.what_struggled,
-                        insights=event.insights,
-                    )
-                )
-
-        return result
+        events = [self.store._row_to_application_event(row) for row in rows]
+        return [
+            PastApplication(event=event)
+            for event in events
+            if concept_id in event.concept_ids
+        ]
 
     def find_connections_to_known(
         self, new_concept_name: str, learner_id: str

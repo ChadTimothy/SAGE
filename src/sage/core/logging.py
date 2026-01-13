@@ -4,6 +4,9 @@ import logging
 import sys
 from typing import Optional
 
+LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
 
 def get_logger(name: str, level: Optional[int] = None) -> logging.Logger:
     """Get a configured logger for the given module name.
@@ -19,11 +22,7 @@ def get_logger(name: str, level: Optional[int] = None) -> logging.Logger:
 
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stderr)
-        formatter = logging.Formatter(
-            fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        handler.setFormatter(formatter)
+        handler.setFormatter(logging.Formatter(fmt=LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
         logger.addHandler(handler)
 
     if level is not None:
@@ -32,20 +31,24 @@ def get_logger(name: str, level: Optional[int] = None) -> logging.Logger:
     return logger
 
 
-def configure_logging(level: int = logging.INFO, quiet: bool = False) -> None:
+def configure_logging(level: Optional[int] = None, quiet: bool = False) -> None:
     """Configure root logging for the application.
 
     Args:
-        level: Log level (DEBUG, INFO, WARNING, ERROR)
+        level: Log level (DEBUG, INFO, WARNING, ERROR). If None, uses settings.
         quiet: If True, only show warnings and errors
     """
+    if level is None:
+        from .config import settings
+        level = settings.log_level_int
+
     if quiet:
         level = logging.WARNING
 
     logging.basicConfig(
         level=level,
-        format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        format=LOG_FORMAT,
+        datefmt=LOG_DATE_FORMAT,
         stream=sys.stderr,
     )
 
