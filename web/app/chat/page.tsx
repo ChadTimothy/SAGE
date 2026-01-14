@@ -331,6 +331,10 @@ function getPlaceholderText(isPracticeActive: boolean, isConnected: boolean): st
   return "Connecting to SAGE...";
 }
 
+// TODO: Replace with backend integration using ConversationEngine in practice mode.
+// The backend Assessment and Dialogue modules (M3-M6) can provide intelligent,
+// adaptive responses based on the learner's actual performance. This MVP uses
+// client-side mock responses for initial testing.
 function generatePracticeResponse(scenarioId: string, _userMessage: string): string {
   const responses: Record<string, string[]> = {
     "pricing-call": [

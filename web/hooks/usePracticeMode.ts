@@ -198,48 +198,67 @@ function getHintForScenario(scenario: PracticeScenario | null): string {
   return scenarioHints[Math.floor(Math.random() * scenarioHints.length)];
 }
 
+// TODO: Replace with backend Assessment module for capability-based evaluation.
+// The Assessment module (M5) can analyze actual skill demonstration through
+// proofs and verification. This MVP uses pattern-matching as a placeholder.
 function generatePositives(messages: PracticeMessage[]): string[] {
   const userMessages = messages.filter((m) => m.role === "user");
-  if (userMessages.length === 0) return ["You started the practice session!"];
+  if (userMessages.length === 0) return ["You took the first step by starting practice!"];
 
-  // Simple analysis based on message content
+  // Analyze for demonstrated communication skills (capability indicators)
   const positives: string[] = [];
   const allContent = userMessages.map((m) => m.content.toLowerCase()).join(" ");
 
-  if (allContent.includes("value") || allContent.includes("benefit")) {
-    positives.push("You focused on value rather than just features");
+  // Value articulation - key skill in pricing/negotiation
+  if (allContent.includes("value") || allContent.includes("benefit") || allContent.includes("roi") || allContent.includes("worth")) {
+    positives.push("You articulated value effectively—a key persuasion skill");
   }
-  if (allContent.includes("?")) {
-    positives.push("You asked questions to understand their perspective");
+  // Active listening - asking clarifying questions
+  if ((allContent.match(/\?/g) || []).length >= 2) {
+    positives.push("You demonstrated active listening by asking clarifying questions");
   }
-  if (userMessages.length >= 2) {
-    positives.push("You engaged in a back-and-forth dialogue");
+  // Confidence indicators - assertive language
+  if (allContent.includes("i can") || allContent.includes("i will") || allContent.includes("i believe")) {
+    positives.push("You communicated with confidence and conviction");
   }
-  if (allContent.length > 100) {
-    positives.push("You provided detailed, thoughtful responses");
+  // Empathy/rapport - acknowledging the other party
+  if (allContent.includes("understand") || allContent.includes("appreciate") || allContent.includes("i see")) {
+    positives.push("You showed empathy by acknowledging their perspective");
+  }
+  // Solution-oriented - proposing alternatives
+  if (allContent.includes("what if") || allContent.includes("how about") || allContent.includes("alternatively")) {
+    positives.push("You proposed solutions rather than just responding");
   }
 
   return positives.length > 0
     ? positives
-    : ["You completed the practice session"];
+    : ["You practiced the scenario—repetition builds skill"];
 }
 
 function generateImprovements(messages: PracticeMessage[]): string[] {
   const userMessages = messages.filter((m) => m.role === "user");
   if (userMessages.length === 0)
-    return ["Try responding to build your confidence"];
+    return ["Jump in and respond—practice builds confidence"];
 
+  // Analyze for skill gaps (capability-focused suggestions)
   const improvements: string[] = [];
   const allContent = userMessages.map((m) => m.content.toLowerCase()).join(" ");
 
-  if (!allContent.includes("?")) {
-    improvements.push("Try asking more questions to understand their needs");
+  // Missing discovery questions
+  if (!(allContent.match(/\?/g) || []).length) {
+    improvements.push("Ask discovery questions to understand their real needs");
   }
-  if (userMessages.some((m) => m.content.length < 20)) {
-    improvements.push("Expand on your responses with more detail or examples");
+  // Missing value framing
+  if (!allContent.includes("value") && !allContent.includes("benefit") && !allContent.includes("help")) {
+    improvements.push("Frame your points in terms of value to the other party");
   }
-  if (userMessages.length < 3) {
-    improvements.push("Practice longer conversations to build stamina");
+  // Defensive or apologetic language
+  if (allContent.includes("sorry") || allContent.includes("just") || allContent.includes("maybe")) {
+    improvements.push("Reduce hedging language—speak with more conviction");
+  }
+  // Missing acknowledgment
+  if (!allContent.includes("understand") && !allContent.includes("hear") && !allContent.includes("appreciate")) {
+    improvements.push("Acknowledge their position before presenting yours");
   }
 
   return improvements;
@@ -250,15 +269,23 @@ function generateSummary(
   messages: PracticeMessage[]
 ): string {
   const userMessages = messages.filter((m) => m.role === "user");
-  const responseCount = userMessages.length;
+  const allContent = userMessages.map((m) => m.content.toLowerCase()).join(" ");
 
-  if (responseCount === 0) {
-    return `Ready to try the ${scenario.title.toLowerCase()} scenario? The best way to improve is through practice.`;
+  if (userMessages.length === 0) {
+    return `Ready to practice ${scenario.title.toLowerCase()}? Skill comes from doing, not just knowing.`;
   }
 
-  if (responseCount < 3) {
-    return `Good start with the ${scenario.title.toLowerCase()}! With more practice, you'll feel more confident handling these situations.`;
-  }
+  // Assess overall capability demonstration
+  const hasQuestions = (allContent.match(/\?/g) || []).length > 0;
+  const hasValueLanguage = /value|benefit|roi|worth|help/.test(allContent);
+  const hasConfidence = /i can|i will|i believe|we can/.test(allContent);
+  const skillsShown = [hasQuestions, hasValueLanguage, hasConfidence].filter(Boolean).length;
 
-  return `Nice work on the ${scenario.title.toLowerCase()} practice! You're building the skills to handle these situations with confidence.`;
+  if (skillsShown >= 2) {
+    return `Strong practice session! You demonstrated key ${scenario.title.toLowerCase()} skills. Keep practicing to make them automatic.`;
+  }
+  if (skillsShown === 1) {
+    return `Good foundation in ${scenario.title.toLowerCase()}. Focus on integrating more techniques in your next practice.`;
+  }
+  return `You've started building ${scenario.title.toLowerCase()} skills. Each practice session makes the next one easier.`;
 }
