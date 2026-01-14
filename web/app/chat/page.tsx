@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
 import { Wifi, WifiOff, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,7 @@ export default function ChatPage(): JSX.Element {
   const [showCheckIn, setShowCheckIn] = useState(true);
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null);
   const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(false);
+  const lastVoicedMessageIdRef = useRef<string | null>(null);
 
   const { messages, status, isTyping, sendMessage, isConnected } = useChat({
     sessionId,
@@ -138,16 +139,28 @@ export default function ChatPage(): JSX.Element {
     }
   }, [voiceOutputEnabled, voiceConnected, connectVoice]);
 
+  // Generate a stable ID for messages to track which have been voiced
+  const lastAssistantMessageId = useMemo(() => {
+    if (messages.length === 0) return null;
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage.role !== "assistant" || !lastMessage.content) return null;
+    return `${messages.length}-${lastMessage.timestamp ?? "pending"}`;
+  }, [messages]);
+
   // Send assistant messages through Grok Voice when voice output is enabled
   useEffect(() => {
     if (!voiceOutputEnabled || !voiceConnected || messages.length === 0) return;
+    if (!lastAssistantMessageId) return;
+
+    // Prevent duplicate sends by tracking already-voiced messages
+    if (lastVoicedMessageIdRef.current === lastAssistantMessageId) return;
 
     const lastMessage = messages[messages.length - 1];
     if (lastMessage.role === "assistant" && lastMessage.content) {
-      // Send text to Grok to get voice response
+      lastVoicedMessageIdRef.current = lastAssistantMessageId;
       sendVoiceText(lastMessage.content);
     }
-  }, [messages, voiceOutputEnabled, voiceConnected, sendVoiceText]);
+  }, [messages, voiceOutputEnabled, voiceConnected, sendVoiceText, lastAssistantMessageId]);
 
   return (
     <div className="flex flex-col h-full">

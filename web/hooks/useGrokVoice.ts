@@ -123,6 +123,39 @@ export function useGrokVoice({
     }
   }, [apiKey, currentVoice, onError]);
 
+  // Play received audio
+  const playAudio = useCallback((base64Audio: string) => {
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+      }
+
+      const audioContext = audioContextRef.current;
+      const binaryString = atob(base64Audio);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      // Convert PCM16 to Float32
+      const pcm16 = new Int16Array(bytes.buffer);
+      const float32 = new Float32Array(pcm16.length);
+      for (let i = 0; i < pcm16.length; i++) {
+        float32[i] = pcm16[i] / 32768;
+      }
+
+      const audioBuffer = audioContext.createBuffer(1, float32.length, 24000);
+      audioBuffer.getChannelData(0).set(float32);
+
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      source.start();
+    } catch (err) {
+      console.error("Failed to play audio:", err);
+    }
+  }, []);
+
   // Handle incoming messages from Grok
   const handleServerMessage = useCallback((message: Record<string, unknown>) => {
     switch (message.type) {
@@ -139,66 +172,40 @@ export function useGrokVoice({
         setStatus("connected");
         break;
 
-      case "conversation.item.input_audio_transcription.completed":
+      case "conversation.item.input_audio_transcription.completed": {
         const inputTranscript = (message as { transcript?: string }).transcript || "";
         setTranscript(inputTranscript);
         onTranscript?.(inputTranscript, true);
         break;
+      }
 
-      case "response.audio_transcript.delta":
+      case "response.audio_transcript.delta": {
         const delta = (message as { delta?: string }).delta || "";
         onResponse?.(delta);
         break;
+      }
 
-      case "response.audio.delta":
-        // Handle audio output
+      case "response.audio.delta": {
         const audioData = (message as { delta?: string }).delta;
         if (audioData) {
           playAudio(audioData);
           setStatus("speaking");
         }
         break;
+      }
 
       case "response.audio.done":
         setStatus("connected");
         break;
 
-      case "error":
+      case "error": {
         const errorMsg = (message as { error?: { message?: string } }).error?.message || "Unknown error";
         setError(errorMsg);
         onError?.(errorMsg);
         break;
+      }
     }
-  }, [onTranscript, onResponse, onError]);
-
-  // Play received audio
-  const playAudio = useCallback((base64Audio: string) => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext({ sampleRate: 24000 });
-    }
-
-    const audioContext = audioContextRef.current;
-    const binaryString = atob(base64Audio);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-
-    // Convert PCM16 to Float32
-    const pcm16 = new Int16Array(bytes.buffer);
-    const float32 = new Float32Array(pcm16.length);
-    for (let i = 0; i < pcm16.length; i++) {
-      float32[i] = pcm16[i] / 32768;
-    }
-
-    const audioBuffer = audioContext.createBuffer(1, float32.length, 24000);
-    audioBuffer.getChannelData(0).set(float32);
-
-    const source = audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContext.destination);
-    source.start();
-  }, []);
+  }, [onTranscript, onResponse, onError, playAudio]);
 
   // Start listening (capture microphone)
   const startListening = useCallback(async () => {

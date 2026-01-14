@@ -200,7 +200,7 @@ export function useVoice({
     // Try to find a good voice
     const voices = window.speechSynthesis.getVoices();
     const preferredVoice = voices.find(
-      (v) => v.lang.startsWith("en") && v.name.includes("Google") || v.name.includes("Samantha")
+      (v) => v.lang.startsWith("en") && (v.name.includes("Google") || v.name.includes("Samantha"))
     ) || voices.find((v) => v.lang.startsWith("en"));
 
     if (preferredVoice) {
