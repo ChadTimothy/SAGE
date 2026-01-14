@@ -50,11 +50,36 @@ class ProbingQuestionGenerator:
     questions that reveal understanding gaps.
     """
 
+    # Question templates by strategy
+    DIRECT_TEMPLATES = [
+        "What's blocking you from {outcome}?",
+        "When you think about {outcome}, what feels hardest?",
+        "What would need to be true for you to feel confident doing this?",
+        "If you had to do this tomorrow, what would worry you?",
+    ]
+
+    INDIRECT_TEMPLATES = [
+        "Walk me through how you'd approach this.",
+        "Let's try it - start explaining {topic} as if I knew nothing.",
+        "Show me your process for thinking through this.",
+        "If a friend asked you about this, what would you tell them?",
+    ]
+
+    SCENARIO_TEMPLATES = [
+        "Imagine you're in a {scenario}. What do you do?",
+        "Someone asks you {question}. How do you respond?",
+        "Walk me through {scenario} step by step.",
+        "If {situation} happened, what would be your first move?",
+    ]
+
+    # Language simplifications for children
+    CHILD_LANGUAGE_MAP = {
+        "obstacle": "hard part",
+        "approach": "do",
+    }
+
     def __init__(self):
         """Initialize the question generator."""
-        self._direct_templates = self._load_direct_templates()
-        self._indirect_templates = self._load_indirect_templates()
-        self._scenario_templates = self._load_scenario_templates()
 
     def generate_initial_probe(self, context: ProbingContext) -> ProbingQuestion:
         """Generate the first probing question for an outcome.
@@ -198,40 +223,14 @@ class ProbingQuestionGenerator:
 
     def _adapt_for_learner(self, base_question: str, context: ProbingContext) -> str:
         """Adapt a question for the learner's profile."""
+        if context.learner.age_group != "child":
+            return base_question
+
         # Simplify language for children
-        if context.learner.age_group == "child":
-            # Basic simplification - in production this would be more sophisticated
-            base_question = base_question.replace("obstacle", "hard part")
-            base_question = base_question.replace("approach", "do")
-
-        return base_question
-
-    def _load_direct_templates(self) -> list[str]:
-        """Load direct probing question templates."""
-        return [
-            "What's blocking you from {outcome}?",
-            "When you think about {outcome}, what feels hardest?",
-            "What would need to be true for you to feel confident doing this?",
-            "If you had to do this tomorrow, what would worry you?",
-        ]
-
-    def _load_indirect_templates(self) -> list[str]:
-        """Load indirect probing question templates."""
-        return [
-            "Walk me through how you'd approach this.",
-            "Let's try it - start explaining {topic} as if I knew nothing.",
-            "Show me your process for thinking through this.",
-            "If a friend asked you about this, what would you tell them?",
-        ]
-
-    def _load_scenario_templates(self) -> list[str]:
-        """Load scenario-based question templates."""
-        return [
-            "Imagine you're in a {scenario}. What do you do?",
-            "Someone asks you {question}. How do you respond?",
-            "Walk me through {scenario} step by step.",
-            "If {situation} happened, what would be your first move?",
-        ]
+        result = base_question
+        for original, simple in self.CHILD_LANGUAGE_MAP.items():
+            result = result.replace(original, simple)
+        return result
 
 
 def get_probing_hints_for_prompt(context: ProbingContext) -> str:

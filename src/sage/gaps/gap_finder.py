@@ -84,27 +84,30 @@ class GapFinder:
         Returns:
             ProbingContext for question generation
         """
-        # Get proven concepts
+        # Build proven concept snapshots
         proven = []
         for proof in full_context.proven_concepts:
             concept = self.graph.get_concept(proof.concept_id)
-            if concept:
-                proven.append(
-                    ConceptSnapshot(
-                        id=concept.id,
-                        name=concept.name,
-                        display_name=concept.display_name,
-                        description=concept.description,
-                        summary=concept.summary,
-                        status=concept.status.value,
-                        proof_confidence=proof.confidence,
-                    )
+            if not concept:
+                continue
+            proven.append(
+                ConceptSnapshot(
+                    id=concept.id,
+                    name=concept.name,
+                    display_name=concept.display_name,
+                    description=concept.description,
+                    summary=concept.summary,
+                    status=concept.status.value,
+                    proof_confidence=proof.confidence,
                 )
+            )
 
         # Get concepts already explored in current session
-        explored = []
-        if full_context.last_session:
-            explored = full_context.last_session.concepts_explored or []
+        explored = (
+            full_context.last_session.concepts_explored or []
+            if full_context.last_session
+            else []
+        )
 
         return ProbingContext(
             learner=full_context.learner_snapshot,
@@ -305,7 +308,7 @@ class GapFinder:
         Returns:
             True if unresolved gaps exist
         """
-        return len(self.get_unresolved_gaps(outcome_id)) > 0
+        return bool(self.get_unresolved_gaps(outcome_id))
 
 
 def create_gap_finder(graph: LearningGraph) -> GapFinder:

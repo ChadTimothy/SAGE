@@ -70,24 +70,8 @@ class ConnectionFinder:
         Returns:
             List of connection candidates for teaching
         """
-        # Get related concepts from graph
         related = self.queries.find_related_concepts(concept_id, learner_id)
-
-        # Convert to candidates, prioritizing proven concepts
-        candidates = []
-        for rel in related:
-            hook = self._generate_teaching_hook(rel)
-            candidates.append(
-                ConnectionCandidate(
-                    concept_id=rel.concept.id,
-                    concept_name=rel.concept.name,
-                    display_name=rel.concept.display_name,
-                    relationship=rel.relationship,
-                    strength=rel.strength,
-                    has_proof=rel.has_proof,
-                    teaching_hook=hook,
-                )
-            )
+        candidates = [self._to_candidate(rel) for rel in related]
 
         # Sort: proven first, then by strength
         candidates.sort(key=lambda x: (not x.has_proof, -x.strength))
@@ -111,23 +95,22 @@ class ConnectionFinder:
             Proven concepts that connect to this topic
         """
         related = self.queries.find_connections_to_known(concept_name, learner_id)
+        return [self._to_candidate(rel, has_proof_override=True) for rel in related]
 
-        candidates = []
-        for rel in related:
-            hook = self._generate_teaching_hook(rel)
-            candidates.append(
-                ConnectionCandidate(
-                    concept_id=rel.concept.id,
-                    concept_name=rel.concept.name,
-                    display_name=rel.concept.display_name,
-                    relationship=rel.relationship,
-                    strength=rel.strength,
-                    has_proof=True,  # find_connections_to_known only returns proven
-                    teaching_hook=hook,
-                )
-            )
-
-        return candidates
+    def _to_candidate(
+        self, rel: RelatedConcept, has_proof_override: Optional[bool] = None
+    ) -> ConnectionCandidate:
+        """Convert a RelatedConcept to a ConnectionCandidate."""
+        has_proof = has_proof_override if has_proof_override is not None else rel.has_proof
+        return ConnectionCandidate(
+            concept_id=rel.concept.id,
+            concept_name=rel.concept.name,
+            display_name=rel.concept.display_name,
+            relationship=rel.relationship,
+            strength=rel.strength,
+            has_proof=has_proof,
+            teaching_hook=self._generate_teaching_hook(rel),
+        )
 
     def persist_discovered_connection(
         self,
@@ -248,28 +231,27 @@ class ConnectionFinder:
 
         return self.persist_discovered_connection(connection)
 
+    # Teaching hook templates by relationship type (for proven concepts)
+    PROVEN_HOOK_TEMPLATES = {
+        "builds_on": "This builds on {name}, which you already understand.",
+        "prerequisite": "This builds on {name}, which you already understand.",
+        "contrasts": "Unlike {name}, this works differently.",
+        "similar_to": "This is similar to {name}.",
+    }
+    DEFAULT_PROVEN_HOOK = "Remember {name}? This connects to that."
+    UNPROVEN_HOOK = "This relates to {name}."
+
     def _generate_teaching_hook(self, related: RelatedConcept) -> str:
-        """Generate a teaching hook for referencing a related concept.
+        """Generate a teaching hook for referencing a related concept."""
+        name = related.concept.display_name
 
-        Args:
-            related: The related concept
+        if not related.has_proof:
+            return self.UNPROVEN_HOOK.format(name=name)
 
-        Returns:
-            A phrase to use in teaching
-        """
-        if related.has_proof:
-            # They've proven this - reference it directly
-            if related.relationship in ["builds_on", "prerequisite"]:
-                return f"This builds on {related.concept.display_name}, which you already understand."
-            elif related.relationship == "contrasts":
-                return f"Unlike {related.concept.display_name}, this works differently."
-            elif related.relationship == "similar_to":
-                return f"This is similar to {related.concept.display_name}."
-            else:
-                return f"Remember {related.concept.display_name}? This connects to that."
-        else:
-            # Not proven - mention but don't assume understanding
-            return f"This relates to {related.concept.display_name}."
+        template = self.PROVEN_HOOK_TEMPLATES.get(
+            related.relationship, self.DEFAULT_PROVEN_HOOK
+        )
+        return template.format(name=name)
 
 
 def get_connection_hints_for_prompt(
