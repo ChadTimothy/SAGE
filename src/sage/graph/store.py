@@ -14,12 +14,24 @@ from pydantic import BaseModel
 
 from .models import (
     ApplicationEvent,
+    ApplicationStatus,
     Concept,
+    ConceptStatus,
+    DemoType,
     Edge,
+    EdgeType,
     Learner,
+    LearnerInsights,
+    LearnerPreferences,
+    LearnerProfile,
+    Message,
     Outcome,
+    OutcomeStatus,
     Proof,
+    ProofExchange,
     Session,
+    SessionContext,
+    SessionEndingState,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -315,8 +327,6 @@ class GraphStore:
 
     def _row_to_learner(self, row: sqlite3.Row) -> Learner:
         """Convert a database row to a Learner model."""
-        from .models import LearnerInsights, LearnerPreferences, LearnerProfile
-
         return Learner(
             id=row["id"],
             profile=LearnerProfile.model_validate_json(row["profile"]),
@@ -419,8 +429,6 @@ class GraphStore:
 
     def _row_to_outcome(self, row: sqlite3.Row) -> Outcome:
         """Convert a database row to an Outcome model."""
-        from .models import OutcomeStatus
-
         return Outcome(
             id=row["id"],
             learner_id=row["learner_id"],
@@ -523,8 +531,6 @@ class GraphStore:
 
     def _row_to_concept(self, row: sqlite3.Row) -> Concept:
         """Convert a database row to a Concept model."""
-        from .models import ConceptStatus
-
         return Concept(
             id=row["id"],
             learner_id=row["learner_id"],
@@ -597,8 +603,6 @@ class GraphStore:
 
     def _row_to_proof(self, row: sqlite3.Row) -> Proof:
         """Convert a database row to a Proof model."""
-        from .models import DemoType, ProofExchange
-
         return Proof(
             id=row["id"],
             learner_id=row["learner_id"],
@@ -700,18 +704,19 @@ class GraphStore:
 
     def _row_to_session(self, row: sqlite3.Row) -> Session:
         """Convert a database row to a Session model."""
-        from .models import Message, SessionContext, SessionEndingState
-
         messages_data = _deserialize_json(row["messages"]) or []
         messages = [Message.model_validate(m) for m in messages_data]
 
-        context = None
-        if row["context"]:
-            context = SessionContext.model_validate_json(row["context"])
-
-        ending_state = None
-        if row["ending_state"]:
-            ending_state = SessionEndingState.model_validate_json(row["ending_state"])
+        context = (
+            SessionContext.model_validate_json(row["context"])
+            if row["context"]
+            else None
+        )
+        ending_state = (
+            SessionEndingState.model_validate_json(row["ending_state"])
+            if row["ending_state"]
+            else None
+        )
 
         return Session(
             id=row["id"],
@@ -838,8 +843,6 @@ class GraphStore:
 
     def _row_to_application_event(self, row: sqlite3.Row) -> ApplicationEvent:
         """Convert a database row to an ApplicationEvent model."""
-        from .models import ApplicationStatus
-
         return ApplicationEvent(
             id=row["id"],
             learner_id=row["learner_id"],
@@ -887,6 +890,17 @@ class GraphStore:
             )
         return edge
 
+    def update_edge(self, edge: Edge) -> Edge:
+        """Update an existing edge's metadata."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE edges SET metadata = ? WHERE id = ?
+                """,
+                (json.dumps(edge.metadata), edge.id),
+            )
+        return edge
+
     def get_edge(self, edge_id: str) -> Optional[Edge]:
         """Get an edge by ID."""
         with self.connection() as conn:
@@ -922,8 +936,6 @@ class GraphStore:
 
     def _row_to_edge(self, row: sqlite3.Row) -> Edge:
         """Convert a database row to an Edge model."""
-        from .models import EdgeType
-
         return Edge(
             id=row["id"],
             from_id=row["from_id"],

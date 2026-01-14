@@ -4,59 +4,15 @@ This module loads mode-specific prompt templates and assembles
 them into full prompts for the LLM, injecting context data.
 """
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from sage.context.snapshots import (
-    ApplicationSnapshot,
-    ConceptSnapshot,
-    LearnerSnapshot,
-    OutcomeProgress,
-    OutcomeSnapshot,
-    RelatedConcept,
-)
 from sage.context.turn_context import TurnContext
-from sage.graph.models import (
-    DialogueMode,
-    LearnerInsights,
-    Message,
-    SessionContext,
-)
+from sage.graph.models import DialogueMode, Message
 
 
 # Default prompt templates directory
 DEFAULT_PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "data" / "prompts"
-
-
-@dataclass
-class PromptPaths:
-    """Paths to prompt template files."""
-
-    system: Path
-    check_in: Path
-    followup: Path
-    outcome_discovery: Path
-    framing: Path
-    probing: Path
-    teaching: Path
-    verification: Path
-    outcome_check: Path
-
-    @classmethod
-    def from_directory(cls, prompts_dir: Path) -> "PromptPaths":
-        """Create paths from a prompts directory."""
-        return cls(
-            system=prompts_dir / "system.md",
-            check_in=prompts_dir / "check_in.md",
-            followup=prompts_dir / "followup.md",
-            outcome_discovery=prompts_dir / "outcome_discovery.md",
-            framing=prompts_dir / "framing.md",
-            probing=prompts_dir / "probing.md",
-            teaching=prompts_dir / "teaching.md",
-            verification=prompts_dir / "verification.md",
-            outcome_check=prompts_dir / "outcome_check.md",
-        )
 
 
 class PromptTemplates:
@@ -65,39 +21,32 @@ class PromptTemplates:
     def __init__(self, prompts_dir: Optional[Path] = None):
         """Initialize with optional custom prompts directory."""
         self.prompts_dir = prompts_dir or DEFAULT_PROMPTS_DIR
-        self.paths = PromptPaths.from_directory(self.prompts_dir)
         self._cache: dict[str, str] = {}
 
-    def _load(self, path: Path) -> str:
-        """Load a template file, caching the result."""
-        key = str(path)
-        if key not in self._cache:
+    def _load(self, name: str) -> str:
+        """Load a template file, caching the result.
+
+        Args:
+            name: Template name (without .md extension)
+
+        Returns:
+            Template content
+        """
+        if name not in self._cache:
+            path = self.prompts_dir / f"{name}.md"
             if not path.exists():
                 raise FileNotFoundError(f"Prompt template not found: {path}")
-            self._cache[key] = path.read_text()
-        return self._cache[key]
+            self._cache[name] = path.read_text()
+        return self._cache[name]
 
     @property
     def system(self) -> str:
         """Load system prompt."""
-        return self._load(self.paths.system)
+        return self._load("system")
 
     def get_mode_prompt(self, mode: DialogueMode) -> str:
         """Get the prompt template for a specific mode."""
-        mode_paths = {
-            DialogueMode.CHECK_IN: self.paths.check_in,
-            DialogueMode.FOLLOWUP: self.paths.followup,
-            DialogueMode.OUTCOME_DISCOVERY: self.paths.outcome_discovery,
-            DialogueMode.FRAMING: self.paths.framing,
-            DialogueMode.PROBING: self.paths.probing,
-            DialogueMode.TEACHING: self.paths.teaching,
-            DialogueMode.VERIFICATION: self.paths.verification,
-            DialogueMode.OUTCOME_CHECK: self.paths.outcome_check,
-        }
-        path = mode_paths.get(mode)
-        if not path:
-            raise ValueError(f"Unknown dialogue mode: {mode}")
-        return self._load(path)
+        return self._load(mode.value)
 
 
 class PromptBuilder:

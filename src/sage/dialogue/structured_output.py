@@ -5,12 +5,12 @@ returns each turn - and utilities for parsing and validating it.
 """
 
 import logging
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
-from sage.graph.models import DialogueMode, EnergyLevel, IntentionStrength, SessionContext
+from sage.graph.models import DialogueMode, SessionContext
 
 
 logger = logging.getLogger(__name__)
@@ -217,18 +217,6 @@ def create_fallback_response(
     return SAGEResponse(
         message="I need a moment to gather my thoughts. Could you repeat that?",
         current_mode=mode,
-        transition_to=None,
-        transition_reason=None,
-        gap_identified=None,
-        proof_earned=None,
-        connection_discovered=None,
-        application_detected=None,
-        followup_response=None,
-        state_change_detected=None,
-        context_update=None,
-        outcome_achieved=False,
-        outcome_reasoning=None,
-        teaching_approach_used=None,
         reasoning=f"Fallback response: {error}" if error else None,
     )
 
@@ -292,51 +280,20 @@ def validate_response_consistency(
 def get_valid_transitions(from_mode: DialogueMode) -> list[DialogueMode]:
     """Get valid transitions from a mode.
 
+    Uses MODE_BEHAVIORS as the single source of truth.
+
     Args:
         from_mode: The current mode
 
     Returns:
         List of valid modes to transition to
     """
-    transitions = {
-        DialogueMode.CHECK_IN: [
-            DialogueMode.FOLLOWUP,
-            DialogueMode.OUTCOME_DISCOVERY,
-            DialogueMode.PROBING,
-            DialogueMode.FRAMING,
-        ],
-        DialogueMode.FOLLOWUP: [
-            DialogueMode.PROBING,
-            DialogueMode.TEACHING,
-            DialogueMode.OUTCOME_DISCOVERY,
-        ],
-        DialogueMode.OUTCOME_DISCOVERY: [
-            DialogueMode.FRAMING,
-            DialogueMode.PROBING,
-        ],
-        DialogueMode.FRAMING: [
-            DialogueMode.PROBING,
-        ],
-        DialogueMode.PROBING: [
-            DialogueMode.TEACHING,
-            DialogueMode.VERIFICATION,
-            DialogueMode.OUTCOME_CHECK,
-        ],
-        DialogueMode.TEACHING: [
-            DialogueMode.VERIFICATION,
-            DialogueMode.TEACHING,  # Retry with different approach
-        ],
-        DialogueMode.VERIFICATION: [
-            DialogueMode.OUTCOME_CHECK,
-            DialogueMode.TEACHING,  # Back to teaching if not understood
-            DialogueMode.PROBING,  # Find specific gap if partial
-        ],
-        DialogueMode.OUTCOME_CHECK: [
-            DialogueMode.PROBING,  # More gaps exist
-            DialogueMode.OUTCOME_DISCOVERY,  # New outcome
-        ],
-    }
-    return transitions.get(from_mode, [])
+    from sage.dialogue.modes import MODE_BEHAVIORS
+
+    behavior = MODE_BEHAVIORS.get(from_mode)
+    if not behavior:
+        return []
+    return behavior.next_modes.copy()
 
 
 # =============================================================================

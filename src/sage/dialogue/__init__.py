@@ -38,7 +38,6 @@ from sage.dialogue.modes import (
 )
 from sage.dialogue.prompt_builder import (
     PromptBuilder,
-    PromptPaths,
     PromptTemplates,
     build_messages_for_llm,
 )
@@ -82,7 +81,6 @@ __all__ = [
     "should_verify_before_building",
     # Prompt building
     "PromptBuilder",
-    "PromptPaths",
     "PromptTemplates",
     "build_messages_for_llm",
     # State detection

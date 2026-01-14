@@ -42,30 +42,10 @@ class RelatedConcept:
     has_proof: bool  # Whether learner has proven this concept
 
 
-@dataclass
-class PastApplication:
-    """A past application of a concept for teaching context.
-
-    Wraps ApplicationEvent for convenience access to follow-up data.
-    """
-
-    event: ApplicationEvent
-
-    @property
-    def outcome_result(self) -> Optional[str]:
-        return self.event.outcome_result
-
-    @property
-    def what_worked(self) -> Optional[str]:
-        return self.event.what_worked
-
-    @property
-    def what_struggled(self) -> Optional[str]:
-        return self.event.what_struggled
-
-    @property
-    def insights(self) -> Optional[str]:
-        return self.event.insights
+# PastApplication is simply an alias for ApplicationEvent.
+# The wrapper class was removed since it only delegated to the underlying event.
+# Code that needs ApplicationEvent data can access event attributes directly.
+PastApplication = ApplicationEvent
 
 
 class GraphQueries:
@@ -159,19 +139,18 @@ class GraphQueries:
         Returns:
             List of related concepts with relationship info.
         """
-        # Get all relates_to edges from this concept
         edges_from = self.store.get_edges_from(concept_id, edge_type="relates_to")
         edges_to = self.store.get_edges_to(concept_id, edge_type="relates_to")
 
-        # Get learner's proven concepts for quick lookup
         proofs = self.store.get_proofs_by_learner(learner_id)
         proven_ids = {p.concept_id for p in proofs}
 
+        # Build list of (related_concept_id, edge) pairs from both directions
+        edge_pairs = [(e.to_id, e) for e in edges_from] + [(e.from_id, e) for e in edges_to]
+
         result = []
-
-        # Process outgoing edges
-        for edge in edges_from:
-            related = self.store.get_concept(edge.to_id)
+        for related_id, edge in edge_pairs:
+            related = self.store.get_concept(related_id)
             if related:
                 result.append(
                     RelatedConcept(
@@ -182,20 +161,6 @@ class GraphQueries:
                     )
                 )
 
-        # Process incoming edges
-        for edge in edges_to:
-            related = self.store.get_concept(edge.from_id)
-            if related:
-                result.append(
-                    RelatedConcept(
-                        concept=related,
-                        relationship=edge.metadata.get("relationship", "related"),
-                        strength=edge.metadata.get("strength", 0.5),
-                        has_proof=related.id in proven_ids,
-                    )
-                )
-
-        # Sort by strength descending
         result.sort(key=lambda x: x.strength, reverse=True)
         return result
 
@@ -215,35 +180,12 @@ class GraphQueries:
         Returns:
             List of past applications with outcome details.
         """
-        # Get all application events for this learner
-        # Then filter by concept_id (since concept_ids is a list in the event)
-        with self.store.connection() as conn:
-            if completed_only:
-                rows = conn.execute(
-                    """
-                    SELECT * FROM application_events
-                    WHERE learner_id = ?
-                      AND status = 'completed'
-                    ORDER BY followed_up_at DESC
-                    """,
-                    (learner_id,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    """
-                    SELECT * FROM application_events
-                    WHERE learner_id = ?
-                    ORDER BY created_at DESC
-                    """,
-                    (learner_id,),
-                ).fetchall()
+        events = self.store.get_application_events_by_learner(learner_id)
 
-        events = [self.store._row_to_application_event(row) for row in rows]
-        return [
-            PastApplication(event=event)
-            for event in events
-            if concept_id in event.concept_ids
-        ]
+        if completed_only:
+            events = [e for e in events if e.status.value == "completed"]
+
+        return [e for e in events if concept_id in e.concept_ids]
 
     def find_connections_to_known(
         self, new_concept_name: str, learner_id: str
