@@ -794,6 +794,19 @@ class GraphStore:
             ).fetchall()
             return [self._row_to_application_event(row) for row in rows]
 
+    def get_application_events_by_learner(self, learner_id: str) -> list[ApplicationEvent]:
+        """Get all application events for a learner."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM application_events
+                WHERE learner_id = ?
+                ORDER BY created_at DESC
+                """,
+                (learner_id,),
+            ).fetchall()
+            return [self._row_to_application_event(row) for row in rows]
+
     def update_application_event(self, event: ApplicationEvent) -> None:
         """Update an existing application event."""
         with self.connection() as conn:

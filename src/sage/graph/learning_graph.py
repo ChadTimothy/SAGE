@@ -533,3 +533,83 @@ class LearningGraph:
     ) -> list[PastApplication]:
         """Get past applications of a concept for teaching context."""
         return self._queries.get_applications_for_concept(concept_id, learner_id)
+
+    # =========================================================================
+    # Direct Object Methods (for context module)
+    # =========================================================================
+
+    def create_learner(self, learner: Learner) -> Learner:
+        """Create a learner from a full Learner object."""
+        self._store.create_learner(learner)
+        return learner
+
+    def create_outcome_obj(self, outcome: Outcome) -> Outcome:
+        """Create an outcome from a full Outcome object."""
+        self._store.create_outcome(outcome)
+        return outcome
+
+    def create_concept_obj(self, concept: Concept) -> Concept:
+        """Create a concept from a full Concept object."""
+        self._store.create_concept(concept)
+        return concept
+
+    def create_proof_obj(self, proof: Proof) -> Proof:
+        """Create a proof from a full Proof object."""
+        self._store.create_proof(proof)
+        return proof
+
+    def get_proof(self, proof_id: str) -> Optional[Proof]:
+        """Get a proof by ID."""
+        return self._store.get_proof(proof_id)
+
+    def create_session(self, session: Session) -> Session:
+        """Create a session from a full Session object."""
+        self._store.create_session(session)
+        return session
+
+    def update_session(self, session: Session) -> None:
+        """Update an existing session."""
+        self._store.update_session(session)
+
+    def get_sessions_by_learner(self, learner_id: str) -> list[Session]:
+        """Get all sessions for a learner."""
+        return self._store.get_sessions_by_learner(learner_id)
+
+    def create_application_event_obj(self, event: ApplicationEvent) -> ApplicationEvent:
+        """Create an application event from a full object."""
+        self._store.create_application_event(event)
+        return event
+
+    def get_application_event(self, event_id: str) -> Optional[ApplicationEvent]:
+        """Get an application event by ID."""
+        return self._store.get_application_event(event_id)
+
+    def get_application_events_by_learner(self, learner_id: str) -> list[ApplicationEvent]:
+        """Get all application events for a learner."""
+        return self._store.get_application_events_by_learner(learner_id)
+
+    def update_application_event(self, event: ApplicationEvent) -> ApplicationEvent:
+        """Update an existing application event."""
+        self._store.update_application_event(event)
+        return event
+
+    def get_concepts_by_learner(self, learner_id: str) -> list[Concept]:
+        """Get all concepts for a learner."""
+        return self._store.get_concepts_by_learner(learner_id)
+
+    def get_proofs_by_learner(self, learner_id: str) -> list[Proof]:
+        """Get all proofs for a learner."""
+        return self._store.get_proofs_by_learner(learner_id)
+
+    def get_edges_from(self, from_id: str, edge_type: Optional[EdgeType] = None) -> list[Edge]:
+        """Get all edges from a node."""
+        return self._store.get_edges_from(from_id, edge_type.value if edge_type else None)
+
+    def get_edges_to(self, to_id: str, edge_type: Optional[EdgeType] = None) -> list[Edge]:
+        """Get all edges to a node."""
+        return self._store.get_edges_to(to_id, edge_type.value if edge_type else None)
+
+    def create_edge(self, edge: Edge) -> Edge:
+        """Create an edge from a full Edge object."""
+        self._store.create_edge(edge)
+        return edge
