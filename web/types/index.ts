@@ -170,3 +170,36 @@ export interface LearnerStats {
 export interface ApiError {
   detail: string;
 }
+
+// Knowledge Graph Visualization Types
+export type KnowledgeNodeType = "outcome" | "concept";
+export type KnowledgeNodeStatus = "proven" | "in_progress" | "identified" | "active" | "achieved";
+export type KnowledgeEdgeType = "requires" | "relates_to" | "builds_on";
+
+export interface KnowledgeNode {
+  id: string;
+  type: KnowledgeNodeType;
+  label: string;
+  status: KnowledgeNodeStatus;
+  description?: string;
+  proofCount?: number;
+}
+
+export interface KnowledgeEdge {
+  id: string;
+  from: string;
+  to: string;
+  type: KnowledgeEdgeType;
+}
+
+export interface KnowledgeGraphData {
+  nodes: KnowledgeNode[];
+  edges: KnowledgeEdge[];
+}
+
+export interface GraphFilterState {
+  selectedOutcome: string | null;
+  showProvenOnly: boolean;
+  showConcepts: boolean;
+  showOutcomes: boolean;
+}
