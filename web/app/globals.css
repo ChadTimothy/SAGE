@@ -6,6 +6,7 @@
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 250, 250, 250;
   --background-end-rgb: 255, 255, 255;
+  --ring: 142.1 76.2% 36.3%;
 }
 
 @media (prefers-color-scheme: dark) {

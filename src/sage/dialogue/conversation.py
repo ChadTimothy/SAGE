@@ -12,7 +12,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Awaitable, Callable, Optional
 
 from openai import OpenAI
 
@@ -47,6 +47,7 @@ from sage.graph.models import (
     Message,
     Session,
     SessionContext,
+    SessionEndingState,
 )
 
 
@@ -158,6 +159,92 @@ class ConversationEngine:
 
         return session, self.current_mode
 
+    def resume_session(self, session_id: str) -> tuple[Session, DialogueMode]:
+        """Resume an existing conversation session.
+
+        Loads context and session state for continuing a conversation.
+
+        Args:
+            session_id: The session ID to resume
+
+        Returns:
+            Tuple of (Session, current DialogueMode)
+
+        Raises:
+            ValueError: If session not found
+        """
+        session = self.graph.get_session(session_id)
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+
+        self.full_context = self.context_loader.load(session.learner_id)
+        self.current_mode = self._get_mode_from_session(session)
+        self.current_session = session
+
+        logger.info(
+            f"Resumed session {session.id} for learner {session.learner_id} "
+            f"in mode {self.current_mode}"
+        )
+
+        return session, self.current_mode
+
+    def _get_mode_from_session(self, session: Session) -> DialogueMode:
+        """Extract the current mode from session history, or determine initial mode."""
+        for msg in reversed(session.messages or []):
+            if msg.role == "sage" and msg.mode:
+                return DialogueMode(msg.mode)
+
+        return self.mode_manager.determine_initial_mode(self.full_context)
+
+    def _build_llm_messages(
+        self,
+        session_context: Optional[SessionContext] = None,
+    ) -> tuple[TurnContext, list[dict[str, str]]]:
+        """Build turn context and LLM messages for a conversation turn.
+
+        Returns:
+            Tuple of (TurnContext, messages for LLM)
+
+        Raises:
+            RuntimeError: If no session is active
+        """
+        if not self.current_session:
+            raise RuntimeError("No active session. Call start_session first.")
+
+        turn_context = self._build_turn_context(session_context)
+
+        system_prompt = self.prompt_builder.build_system_prompt(turn_context)
+        turn_prompt = self.prompt_builder.build_turn_prompt(turn_context)
+        turn_prompt += f"\n\n---\n\n{get_output_instructions()}"
+        turn_prompt += f"\n\n---\n\n{get_prompt_instructions_for_detection()}"
+
+        return turn_context, build_messages_for_llm(system_prompt, turn_prompt, "")
+
+    def _finalize_turn(
+        self,
+        user_message: str,
+        response: SAGEResponse,
+        session_context: Optional[SessionContext] = None,
+    ) -> None:
+        """Validate response, persist changes, and handle mode transitions."""
+        if self.config.validate_responses:
+            warnings = validate_response_consistency(response, self.current_mode)
+            for warning in warnings:
+                logger.warning(f"Response validation: {warning}")
+
+        self._persist_turn(user_message, response, session_context)
+
+        if response.transition_to:
+            logger.info(
+                f"Mode transition: {self.current_mode} -> {response.transition_to} "
+                f"({response.transition_reason})"
+            )
+            if response.transition_to == DialogueMode.TEACHING and self.current_concept:
+                self.gap_finder.start_teaching_gap(self.current_concept.id)
+                logger.info(f"Started teaching gap: {self.current_concept.display_name}")
+
+            self.current_mode = response.transition_to
+
     def process_turn(
         self,
         user_message: str,
@@ -175,50 +262,38 @@ class ConversationEngine:
         Raises:
             RuntimeError: If no session is active
         """
-        if not self.current_session:
-            raise RuntimeError("No active session. Call start_session first.")
+        _, messages = self._build_llm_messages(session_context)
+        messages[-1]["content"] = user_message
 
-        # Build turn context
-        turn_context = self._build_turn_context(session_context)
-
-        # Build prompts
-        system_prompt = self.prompt_builder.build_system_prompt(turn_context)
-        turn_prompt = self.prompt_builder.build_turn_prompt(turn_context)
-
-        # Add structured output instructions
-        turn_prompt += f"\n\n---\n\n{get_output_instructions()}"
-
-        # Add state detection instructions
-        turn_prompt += f"\n\n---\n\n{get_prompt_instructions_for_detection()}"
-
-        # Build messages for LLM
-        messages = build_messages_for_llm(system_prompt, turn_prompt, user_message)
-
-        # Call LLM
         response = self._call_llm(messages)
+        self._finalize_turn(user_message, response, session_context)
 
-        # Validate response
-        if self.config.validate_responses:
-            warnings = validate_response_consistency(response, self.current_mode)
-            for warning in warnings:
-                logger.warning(f"Response validation: {warning}")
+        return response
 
-        # Persist changes
-        self._persist_turn(user_message, response, session_context)
+    async def process_turn_streaming(
+        self,
+        user_message: str,
+        on_chunk: Callable[[str], Awaitable[None]],
+        session_context: Optional[SessionContext] = None,
+    ) -> SAGEResponse:
+        """Process a conversation turn with streaming output.
 
-        # Update current mode
-        if response.transition_to:
-            logger.info(
-                f"Mode transition: {self.current_mode} -> {response.transition_to} "
-                f"({response.transition_reason})"
-            )
-            # Handle mode-specific actions on transition
-            if response.transition_to == DialogueMode.TEACHING and self.current_concept:
-                # Mark gap as being taught
-                self.gap_finder.start_teaching_gap(self.current_concept.id)
-                logger.info(f"Started teaching gap: {self.current_concept.display_name}")
+        Args:
+            user_message: The user's message
+            on_chunk: Async callback to receive text chunks during streaming
+            session_context: Optional session context (Set/Setting/Intention)
 
-            self.current_mode = response.transition_to
+        Returns:
+            The SAGE response after streaming completes
+
+        Raises:
+            RuntimeError: If no session is active
+        """
+        _, messages = self._build_llm_messages(session_context)
+        messages[-1]["content"] = user_message
+
+        response = await self._call_llm_streaming(messages, on_chunk)
+        self._finalize_turn(user_message, response, session_context)
 
         return response
 
@@ -304,6 +379,57 @@ class ConversationEngine:
                     return create_fallback_response(self.current_mode, e)
 
         # Should never reach here, but just in case
+        return create_fallback_response(self.current_mode)
+
+    async def _call_llm_streaming(
+        self,
+        messages: list[dict[str, str]],
+        on_chunk: Callable[[str], Awaitable[None]],
+    ) -> SAGEResponse:
+        """Call the LLM with streaming, sending chunks via callback.
+
+        Args:
+            messages: The messages to send
+            on_chunk: Async callback to receive text chunks
+
+        Returns:
+            Parsed SAGEResponse after stream completes
+        """
+        accumulated = ""
+
+        for attempt in range(self.config.max_retries + 1):
+            try:
+                # Make streaming API call
+                stream = self.client.chat.completions.create(
+                    model=self.config.model,
+                    messages=messages,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                    response_format={"type": "json_object"},
+                    stream=True,
+                )
+
+                # Stream chunks and accumulate
+                accumulated = ""
+                for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        accumulated += content
+                        # Send raw chunk for UI feedback
+                        await on_chunk(content)
+
+                if not accumulated:
+                    raise ValueError("Empty response from LLM")
+
+                # Parse complete JSON
+                response_data = json.loads(accumulated)
+                return parse_sage_response(response_data)
+
+            except Exception as e:
+                logger.error(f"Streaming LLM call failed (attempt {attempt + 1}): {e}")
+                if attempt == self.config.max_retries:
+                    return create_fallback_response(self.current_mode, e)
+
         return create_fallback_response(self.current_mode)
 
     def _persist_turn(
@@ -422,6 +548,28 @@ class ConversationEngine:
             changes,
         )
 
+    def _determine_next_step(self) -> Optional[str]:
+        """Determine what the next step would be for session continuity."""
+        if not self.current_mode:
+            return None
+
+        concept_name = self.current_concept.name if self.current_concept else None
+
+        # Templates for each mode. Use {concept} placeholder for concept-specific messages.
+        mode_templates = {
+            DialogueMode.TEACHING: "Continue teaching {concept}" if concept_name else None,
+            DialogueMode.PROBING: "Continue probing for gaps",
+            DialogueMode.VERIFICATION: f"Complete verification of {concept_name}" if concept_name else None,
+            DialogueMode.OUTCOME_DISCOVERY: "Continue exploring learning goals",
+            DialogueMode.FRAMING: "Continue framing the territory",
+            DialogueMode.OUTCOME_CHECK: "Check if outcome is achieved",
+        }
+
+        template = mode_templates.get(self.current_mode)
+        if template and "{concept}" in template:
+            return template.format(concept=concept_name)
+        return template
+
     def end_session(self) -> Session:
         """End the current session.
 
@@ -430,6 +578,13 @@ class ConversationEngine:
         """
         if not self.current_session:
             raise RuntimeError("No active session to end.")
+
+        # Capture ending state for cross-session continuity
+        self.current_session.ending_state = SessionEndingState(
+            mode=self.current_mode.value if self.current_mode else "unknown",
+            current_focus=self.current_concept.name if self.current_concept else None,
+            next_step=self._determine_next_step(),
+        )
 
         # Update session end time
         self.current_session.ended_at = datetime.utcnow()
