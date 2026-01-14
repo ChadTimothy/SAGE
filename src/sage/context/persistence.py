@@ -14,12 +14,14 @@ from sage.graph.models import (
     ApplicationStatus,
     Concept,
     ConceptStatus,
+    DemoType,
     DialogueMode,
     Edge,
     EdgeType,
     Message,
     OutcomeStatus,
     Proof,
+    ProofExchange,
     Session,
     SessionContext,
 )
@@ -172,11 +174,6 @@ class TurnPersistence:
         if changes.state_change_detected and changes.context_update:
             session.context = changes.context_update
 
-        # Handle mode transition
-        if changes.transition_to:
-            # Mode is tracked in messages, but we could also track it on session
-            pass
-
         # Handle outcome achieved
         if changes.outcome_achieved:
             self._handle_outcome_achieved(session)
@@ -249,9 +246,6 @@ class TurnPersistence:
         proof_data: ProofEarned,
     ) -> Proof:
         """Create proof and update concept status."""
-        from sage.graph.models import DemoType, ProofExchange
-
-        # Create the proof
         proof = Proof(
             learner_id=session.learner_id,
             concept_id=proof_data.concept_id,

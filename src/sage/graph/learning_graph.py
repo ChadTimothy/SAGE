@@ -301,10 +301,6 @@ class LearningGraph:
 
         return proof
 
-    def get_proofs_for_learner(self, learner_id: str) -> list[Proof]:
-        """Get all proofs for a learner."""
-        return self._store.get_proofs_by_learner(learner_id)
-
     def get_proven_concepts(self, learner_id: str) -> list[tuple[Concept, Proof]]:
         """Get all concepts the learner has proven with their proofs."""
         return self._queries.get_proven_concepts(learner_id)
@@ -387,11 +383,6 @@ class LearningGraph:
     # =========================================================================
     # Edge Operations
     # =========================================================================
-
-    def add_edge(self, edge: Edge) -> Edge:
-        """Add an edge to the graph."""
-        self._store.create_edge(edge)
-        return edge
 
     def add_concept_relation(
         self,

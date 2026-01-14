@@ -82,11 +82,8 @@ class TurnContextBuilder:
         """
         self.full = full_context
         self.session = session
-        self._concept_name_map = self._build_concept_name_map()
-
-    def _build_concept_name_map(self) -> dict[str, str]:
-        """Build map of concept_id -> display_name."""
-        return {c.id: c.display_name for c in self.full.all_concepts}
+        self._concept_name_map = {c.id: c.display_name for c in full_context.all_concepts}
+        self._proof_by_concept = {p.concept_id: p for p in full_context.proofs}
 
     def build(
         self,
@@ -122,10 +119,7 @@ class TurnContextBuilder:
         # Build concept snapshots
         current_concept_snapshot = None
         if current_concept:
-            proof = next(
-                (p for p in self.full.proofs if p.concept_id == current_concept.id),
-                None
-            )
+            proof = self._proof_by_concept.get(current_concept.id)
             current_concept_snapshot = ConceptSnapshot.from_concept(
                 current_concept, proof
             )
@@ -162,14 +156,13 @@ class TurnContextBuilder:
 
     def _build_proven_concept_snapshots(self) -> list[ConceptSnapshot]:
         """Build snapshots for all proven concepts."""
-        snapshots = []
-        for concept in self.full.proven_concepts:
-            proof = next(
-                (p for p in self.full.proofs if p.concept_id == concept.id),
-                None
+        return [
+            ConceptSnapshot.from_concept(
+                concept,
+                self._proof_by_concept.get(concept.id),
             )
-            snapshots.append(ConceptSnapshot.from_concept(concept, proof))
-        return snapshots
+            for concept in self.full.proven_concepts
+        ]
 
     def _build_related_concepts(
         self,
@@ -231,10 +224,7 @@ class TurnContextBuilder:
 
     def _get_recent_messages(self, limit: int) -> list[Message]:
         """Get the most recent messages from the session."""
-        messages = self.session.messages
-        if len(messages) <= limit:
-            return messages
-        return messages[-limit:]
+        return self.session.messages[-limit:]
 
     def _generate_adaptation_hints(self) -> list[str]:
         """Generate adaptation hints based on current state.

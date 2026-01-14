@@ -13,7 +13,6 @@ from sage.graph.models import (
     ApplicationEvent,
     ApplicationStatus,
     Concept,
-    ConceptStatus,
     Edge,
     EdgeType,
     Learner,
@@ -111,7 +110,7 @@ class FullContextLoader:
             days_since = (datetime.utcnow() - last_session.ended_at).days
 
         # Load concept relations
-        concept_relations = self._load_concept_relations(learner_id)
+        concept_relations = self._load_concept_relations(all_concepts)
 
         # Load application events
         pending_followups = self._load_pending_followups(learner_id)
@@ -146,23 +145,20 @@ class FullContextLoader:
         if not sessions:
             return None
         # Sort by started_at descending and return the most recent
-        sessions.sort(key=lambda s: s.started_at, reverse=True)
-        return sessions[0] if sessions else None
+        return max(sessions, key=lambda s: s.started_at)
 
-    def _load_concept_relations(self, learner_id: str) -> dict[str, list[Edge]]:
+    def _load_concept_relations(
+        self,
+        all_concepts: list[Concept],
+    ) -> dict[str, list[Edge]]:
         """Load all relates_to edges for quick lookup."""
         relations: dict[str, list[Edge]] = {}
 
-        # Get all concepts for this learner
-        concepts = self._load_all_concepts(learner_id)
-        concept_ids = {c.id for c in concepts}
-
-        # For each concept, find relates_to edges
-        for concept_id in concept_ids:
-            edges = self.graph.get_edges_from(concept_id, EdgeType.RELATES_TO)
-            edges.extend(self.graph.get_edges_to(concept_id, EdgeType.RELATES_TO))
+        for concept in all_concepts:
+            edges = self.graph.get_edges_from(concept.id, EdgeType.RELATES_TO)
+            edges.extend(self.graph.get_edges_to(concept.id, EdgeType.RELATES_TO))
             if edges:
-                relations[concept_id] = edges
+                relations[concept.id] = edges
 
         return relations
 
@@ -198,15 +194,6 @@ class FullContextLoader:
             reverse=True
         )
         return completed
-
-    def needs_long_break_recap(self) -> bool:
-        """Check if we need to do a recap due to long break.
-
-        Returns True if more than 14 days since last session.
-        """
-        # This would be called on a loaded context
-        # For now, provide as a utility
-        return False
 
     def get_concepts_needing_reverification(
         self,
