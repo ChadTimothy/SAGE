@@ -13,6 +13,16 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  CurrentGoal,
+  KnowledgeStats,
+  UpcomingApplications,
+} from "@/components/sidebar";
+import type {
+  OutcomeSnapshot,
+  LearnerStats,
+  ApplicationSnapshot,
+} from "@/types";
 
 interface NavItem {
   href: string;
@@ -37,7 +47,7 @@ interface NavLinkProps {
   collapsed: boolean;
 }
 
-function NavLink({ item, isActive, collapsed }: NavLinkProps): React.ReactElement {
+function NavLink({ item, isActive, collapsed }: NavLinkProps): JSX.Element {
   return (
     <Link
       href={item.href}
@@ -54,7 +64,23 @@ function NavLink({ item, isActive, collapsed }: NavLinkProps): React.ReactElemen
   );
 }
 
-export function Sidebar(): React.ReactElement {
+export interface SidebarProps {
+  outcome?: OutcomeSnapshot | null;
+  stats?: LearnerStats;
+  applications?: ApplicationSnapshot[];
+}
+
+const defaultStats: LearnerStats = {
+  total_proofs: 0,
+  completed_goals: 0,
+  total_sessions: 0,
+};
+
+export function Sidebar({
+  outcome = null,
+  stats = defaultStats,
+  applications = [],
+}: SidebarProps): JSX.Element {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -62,10 +88,9 @@ export function Sidebar(): React.ReactElement {
     <aside
       className={cn(
         "flex flex-col h-full bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300",
-        collapsed ? "w-16" : "w-64"
+        collapsed ? "w-16" : "w-72"
       )}
     >
-      {/* Logo */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-slate-200 dark:border-slate-800">
         {!collapsed && (
           <Link href="/" className="flex items-center gap-2">
@@ -85,8 +110,7 @@ export function Sidebar(): React.ReactElement {
         </button>
       </div>
 
-      {/* Primary navigation */}
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="p-2 space-y-1">
         {navItems.map((item) => (
           <NavLink
             key={item.href}
@@ -97,8 +121,13 @@ export function Sidebar(): React.ReactElement {
         ))}
       </nav>
 
-      {/* Secondary navigation */}
-      <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
+      <div className="flex-1 overflow-y-auto border-t border-slate-200 dark:border-slate-800 divide-y divide-slate-200 dark:divide-slate-800">
+        <CurrentGoal outcome={outcome} collapsed={collapsed} />
+        <KnowledgeStats stats={stats} collapsed={collapsed} />
+        <UpcomingApplications applications={applications} collapsed={collapsed} />
+      </div>
+
+      <div className="p-2 border-t border-slate-200 dark:border-slate-800 space-y-1">
         {secondaryItems.map((item) => (
           <NavLink
             key={item.href}
