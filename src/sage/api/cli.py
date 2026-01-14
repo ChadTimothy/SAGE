@@ -149,7 +149,7 @@ def chat(
         try:
             session = engine.end_session()
             console.print(f"\n[dim]Session saved: {session.id}[/dim]")
-        except Exception:
+        except RuntimeError:
             pass  # Session may already be ended
 
     except ValueError as e:
@@ -214,7 +214,7 @@ def status(
             outcome = graph.get_outcome(learner_obj.active_outcome_id)
             if outcome:
                 console.print("[bold]Active Goal:[/bold]")
-                console.print(f"  {outcome.description}")
+                console.print(f"  {outcome.stated_goal}")
                 console.print()
 
         # Proven concepts
@@ -279,8 +279,8 @@ def history(
             console.print(
                 Panel(
                     f"Session: {sess.id}\n"
-                    f"Started: {_format_timestamp(sess.start_time)}\n"
-                    f"Ended: {_format_timestamp(sess.end_time)}\n"
+                    f"Started: {_format_timestamp(sess.started_at)}\n"
+                    f"Ended: {_format_timestamp(sess.ended_at)}\n"
                     f"Messages: {len(sess.messages)}",
                     title="Session Details",
                     border_style="blue",
@@ -335,7 +335,7 @@ def history(
         for sess in sessions[:limit]:
             table.add_row(
                 sess.id[:20] + "..." if len(sess.id) > 20 else sess.id,
-                _format_timestamp(sess.start_time),
+                _format_timestamp(sess.started_at),
                 str(len(sess.messages)),
                 str(len(sess.concepts_explored)),
                 str(len(sess.proofs_earned)),
