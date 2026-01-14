@@ -27,6 +27,15 @@ function getRelativeDate(dateStr: string | null): string {
   return formatDate(date);
 }
 
+function SectionHeader(): JSX.Element {
+  return (
+    <div className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+      <CalendarDays className="h-4 w-4 text-sage-600" />
+      <span>Upcoming</span>
+    </div>
+  );
+}
+
 export function UpcomingApplications({
   applications,
   collapsed,
@@ -42,10 +51,7 @@ export function UpcomingApplications({
   if (applications.length === 0) {
     return (
       <div className="p-4 space-y-3">
-        <div className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-          <CalendarDays className="h-4 w-4 text-sage-600" />
-          <span>Upcoming</span>
-        </div>
+        <SectionHeader />
         <p className="text-sm text-slate-500 dark:text-slate-400 italic">
           No upcoming applications scheduled.
         </p>
@@ -55,11 +61,7 @@ export function UpcomingApplications({
 
   return (
     <div className="p-4 space-y-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-        <CalendarDays className="h-4 w-4 text-sage-600" />
-        <span>Upcoming</span>
-      </div>
-
+      <SectionHeader />
       <ul className="space-y-2">
         {applications.slice(0, 3).map((app) => (
           <li key={app.id} className="space-y-0.5">
