@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from sage.context.full_context import FullContext
-from sage.context.snapshots import ConceptSnapshot
+from sage.context.snapshots import ConceptSnapshot, LearnerSnapshot
 from sage.dialogue.structured_output import (
     ConnectionDiscovered,
     GapIdentified,
@@ -84,12 +84,16 @@ class GapFinder:
         Returns:
             ProbingContext for question generation
         """
-        # Build proven concept snapshots
+        # Build proven concept snapshots from proofs
+        # Create a map of concept_id -> highest confidence proof
+        proof_by_concept: dict[str, float] = {}
+        for proof in full_context.proofs:
+            current = proof_by_concept.get(proof.concept_id, 0.0)
+            proof_by_concept[proof.concept_id] = max(current, proof.confidence)
+
         proven = []
-        for proof in full_context.proven_concepts:
-            concept = self.graph.get_concept(proof.concept_id)
-            if not concept:
-                continue
+        for concept in full_context.proven_concepts:
+            confidence = proof_by_concept.get(concept.id, 0.8)
             proven.append(
                 ConceptSnapshot(
                     id=concept.id,
@@ -98,7 +102,7 @@ class GapFinder:
                     description=concept.description,
                     summary=concept.summary,
                     status=concept.status.value,
-                    proof_confidence=proof.confidence,
+                    proof_confidence=confidence,
                 )
             )
 
@@ -109,8 +113,11 @@ class GapFinder:
             else []
         )
 
+        # Create learner snapshot from learner
+        learner_snapshot = LearnerSnapshot.from_learner(full_context.learner)
+
         return ProbingContext(
-            learner=full_context.learner_snapshot,
+            learner=learner_snapshot,
             outcome=full_context.active_outcome,
             session_context=None,  # Filled in at turn level
             proven_concepts=proven,
