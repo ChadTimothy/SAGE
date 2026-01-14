@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
-import { Wifi, WifiOff, RefreshCw } from "lucide-react";
+import { Wifi, WifiOff, RefreshCw, Theater } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChat } from "@/hooks/useChat";
 import { useGrokVoice } from "@/hooks/useGrokVoice";
+import { usePracticeMode } from "@/hooks/usePracticeMode";
 import {
   MessageBubble,
   ChatInput,
@@ -14,6 +15,12 @@ import {
 } from "@/components/chat";
 import { CheckInModal } from "@/components/sidebar";
 import { VoiceOutputToggle, VoiceSelector } from "@/components/voice";
+import {
+  PracticeModeContainer,
+  PracticeScenarioSetup,
+  PracticeFeedback,
+  PracticeMessageBubble,
+} from "@/components/practice";
 import type { SessionContext } from "@/types";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -61,6 +68,15 @@ export default function ChatPage(): JSX.Element {
 
   const { messages, status, isTyping, sendMessage, isConnected } = useChat({
     sessionId,
+  });
+
+  const practice = usePracticeMode({
+    onPracticeStart: (scenario) => {
+      console.log("Practice started:", scenario.title);
+    },
+    onPracticeEnd: (feedback) => {
+      console.log("Practice ended with feedback:", feedback);
+    },
   });
 
   const {
@@ -116,6 +132,21 @@ export default function ChatPage(): JSX.Element {
       sendMessage(suggestion, false);
     },
     [sendMessage]
+  );
+
+  // Practice mode handlers
+  const handlePracticeSend = useCallback(
+    (content: string) => {
+      practice.addMessage("user", content);
+      // Simulate character response after a short delay
+      setTimeout(() => {
+        practice.addMessage(
+          "sage-character",
+          generatePracticeResponse(practice.scenario?.id || "", content)
+        );
+      }, 1000);
+    },
+    [practice]
   );
 
   const handleVoiceStart = useCallback(async () => {
@@ -180,6 +211,21 @@ export default function ChatPage(): JSX.Element {
           </p>
         </div>
         <div className="flex items-center gap-4">
+          <button
+            onClick={practice.openSetup}
+            disabled={practice.isActive}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm",
+              "bg-amber-100 dark:bg-amber-900/30",
+              "text-amber-700 dark:text-amber-300",
+              "hover:bg-amber-200 dark:hover:bg-amber-800/50",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+              "transition-colors"
+            )}
+          >
+            <Theater className="w-4 h-4" />
+            <span className="hidden sm:inline">Practice</span>
+          </button>
           <VoiceSelector
             value={currentVoice}
             onChange={setVoice}
@@ -197,42 +243,127 @@ export default function ChatPage(): JSX.Element {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto">
-        {messages.length === 0 && !isTyping ? (
-          <EmptyState onSuggestionClick={handleSuggestionClick} />
-        ) : (
-          <div className="p-6 space-y-4 max-w-4xl mx-auto">
-            <AnimatePresence mode="popLayout">
-              {messages.map((message, index) => (
-                <MessageBubble
-                  key={`msg-${index}-${message.timestamp ?? "pending"}`}
-                  role={message.role}
-                  content={message.content}
-                  timestamp={message.timestamp || new Date().toISOString()}
-                  mode={message.mode}
-                />
-              ))}
-            </AnimatePresence>
+      <PracticeModeContainer
+        isActive={practice.isActive}
+        scenario={practice.scenario}
+        onEnd={practice.endPractice}
+        onHint={practice.requestHint}
+      >
+        <div className="flex-1 overflow-y-auto">
+          {practice.isActive ? (
+            // Practice mode messages
+            <div className="p-6 space-y-4 max-w-4xl mx-auto">
+              <AnimatePresence mode="popLayout">
+                {practice.messages.map((message) => (
+                  <PracticeMessageBubble
+                    key={message.id}
+                    role={message.role}
+                    characterName={practice.scenario?.sageRole}
+                    content={message.content}
+                    timestamp={message.timestamp}
+                  />
+                ))}
+              </AnimatePresence>
+              <div ref={messagesEndRef} />
+            </div>
+          ) : messages.length === 0 && !isTyping ? (
+            <EmptyState onSuggestionClick={handleSuggestionClick} />
+          ) : (
+            <div className="p-6 space-y-4 max-w-4xl mx-auto">
+              <AnimatePresence mode="popLayout">
+                {messages.map((message, index) => (
+                  <MessageBubble
+                    key={`msg-${index}-${message.timestamp ?? "pending"}`}
+                    role={message.role}
+                    content={message.content}
+                    timestamp={message.timestamp || new Date().toISOString()}
+                    mode={message.mode}
+                  />
+                ))}
+              </AnimatePresence>
 
-            <AnimatePresence>
-              {isTyping && <StreamingIndicator key="streaming" />}
-            </AnimatePresence>
+              <AnimatePresence>
+                {isTyping && <StreamingIndicator key="streaming" />}
+              </AnimatePresence>
 
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </div>
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+      </PracticeModeContainer>
 
       <ChatInput
-        onSend={handleSend}
+        onSend={practice.isActive ? handlePracticeSend : handleSend}
         onVoiceStart={handleVoiceStart}
         onVoiceEnd={handleVoiceEnd}
         isListening={isListening}
-        disabled={!isConnected}
-        placeholder={isConnected ? "Type a message..." : "Connecting to SAGE..."}
+        disabled={practice.isActive ? false : !isConnected}
+        placeholder={getPlaceholderText(practice.isActive, isConnected)}
         audioLevel={audioLevel}
         interimTranscript={transcript}
       />
+
+      {/* Practice Mode Modals */}
+      <PracticeScenarioSetup
+        isOpen={practice.showSetup}
+        onClose={practice.closeSetup}
+        onStart={practice.startPractice}
+      />
+
+      <PracticeFeedback
+        isOpen={practice.showFeedback}
+        feedback={practice.feedback}
+        onClose={practice.closeFeedback}
+        onPracticeAgain={practice.practiceAgain}
+        onBackToLearning={practice.closeFeedback}
+      />
     </div>
   );
+}
+
+function getPlaceholderText(isPracticeActive: boolean, isConnected: boolean): string {
+  if (isPracticeActive) {
+    return "Respond to the scenario...";
+  }
+  if (isConnected) {
+    return "Type a message...";
+  }
+  return "Connecting to SAGE...";
+}
+
+function generatePracticeResponse(scenarioId: string, _userMessage: string): string {
+  const responses: Record<string, string[]> = {
+    "pricing-call": [
+      "I appreciate you explaining that, but our budget is really tight. Can you work with $1,500?",
+      "I see the value, but I've gotten lower quotes from other providers. What makes you different?",
+      "That's more than I expected. What if we reduce the scope a bit?",
+      "I need to think about it. Can you send me a detailed breakdown?",
+    ],
+    negotiation: [
+      "I understand your position, but we need something that works for both of us.",
+      "That's an interesting point. Let me counter with this alternative...",
+      "I'm not sure that works for us. What else can you offer?",
+      "We're getting closer, but I need a bit more flexibility on your end.",
+    ],
+    presentation: [
+      "That makes sense. But how does this compare to what competitors are offering?",
+      "Interesting. What's the timeline for seeing results?",
+      "I'm concerned about the implementation complexity. Can you address that?",
+      "What happens if this doesn't work as expected?",
+    ],
+    interview: [
+      "Tell me about a time when you had to deal with a difficult situation at work.",
+      "What would you say is your biggest weakness?",
+      "Where do you see yourself in five years?",
+      "Why should we hire you over other candidates?",
+    ],
+  };
+
+  const scenarioResponses = responses[scenarioId] || [
+    "That's an interesting point. Tell me more about your thinking.",
+    "I see. How would you handle this differently?",
+    "Okay, but what if the situation changed?",
+  ];
+
+  return scenarioResponses[Math.floor(Math.random() * scenarioResponses.length)];
 }
