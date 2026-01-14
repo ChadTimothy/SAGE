@@ -601,6 +601,10 @@ class LearningGraph:
         """Get all proofs for a learner."""
         return self._store.get_proofs_by_learner(learner_id)
 
+    def get_outcomes_by_learner(self, learner_id: str) -> list[Outcome]:
+        """Get all outcomes for a learner."""
+        return self._store.get_outcomes_by_learner(learner_id)
+
     def get_edges_from(self, from_id: str, edge_type: Optional[EdgeType] = None) -> list[Edge]:
         """Get all edges from a node."""
         return self._store.get_edges_from(from_id, edge_type.value if edge_type else None)
