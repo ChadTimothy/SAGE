@@ -50,28 +50,6 @@ class ProbingQuestionGenerator:
     questions that reveal understanding gaps.
     """
 
-    # Question templates by strategy
-    DIRECT_TEMPLATES = [
-        "What's blocking you from {outcome}?",
-        "When you think about {outcome}, what feels hardest?",
-        "What would need to be true for you to feel confident doing this?",
-        "If you had to do this tomorrow, what would worry you?",
-    ]
-
-    INDIRECT_TEMPLATES = [
-        "Walk me through how you'd approach this.",
-        "Let's try it - start explaining {topic} as if I knew nothing.",
-        "Show me your process for thinking through this.",
-        "If a friend asked you about this, what would you tell them?",
-    ]
-
-    SCENARIO_TEMPLATES = [
-        "Imagine you're in a {scenario}. What do you do?",
-        "Someone asks you {question}. How do you respond?",
-        "Walk me through {scenario} step by step.",
-        "If {situation} happened, what would be your first move?",
-    ]
-
     # Language simplifications for children
     CHILD_LANGUAGE_MAP = {
         "obstacle": "hard part",
