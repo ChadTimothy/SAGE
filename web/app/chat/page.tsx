@@ -5,6 +5,7 @@ import { AnimatePresence } from "framer-motion";
 import { Wifi, WifiOff, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChat } from "@/hooks/useChat";
+import { useGrokVoice } from "@/hooks/useGrokVoice";
 import {
   MessageBubble,
   ChatInput,
@@ -12,6 +13,7 @@ import {
   EmptyState,
 } from "@/components/chat";
 import { CheckInModal } from "@/components/sidebar";
+import { VoiceOutputToggle, VoiceSelector } from "@/components/voice";
 import type { SessionContext } from "@/types";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -52,12 +54,42 @@ function generateSessionId(): string {
 export default function ChatPage(): JSX.Element {
   const [sessionId] = useState(generateSessionId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [isListening, setIsListening] = useState(false);
   const [showCheckIn, setShowCheckIn] = useState(true);
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null);
+  const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(false);
 
   const { messages, status, isTyping, sendMessage, isConnected } = useChat({
     sessionId,
+  });
+
+  const {
+    status: voiceStatus,
+    isConnected: voiceConnected,
+    isListening,
+    isSpeaking,
+    transcript,
+    audioLevel,
+    connect: connectVoice,
+    disconnect: disconnectVoice,
+    startListening,
+    stopListening,
+    sendText: sendVoiceText,
+    setVoice,
+    currentVoice,
+    error: voiceError,
+  } = useGrokVoice({
+    onTranscript: (text, isFinal) => {
+      if (isFinal && text.trim()) {
+        sendMessage(text.trim(), true);
+      }
+    },
+    onResponse: (text) => {
+      // Response text is streamed from Grok voice
+      console.log("Grok voice response:", text);
+    },
+    onError: (error) => {
+      console.error("Grok voice error:", error);
+    },
   });
 
   const handleCheckInComplete = useCallback((context: SessionContext) => {
@@ -85,8 +117,37 @@ export default function ChatPage(): JSX.Element {
     [sendMessage]
   );
 
-  const handleVoiceStart = useCallback(() => setIsListening(true), []);
-  const handleVoiceEnd = useCallback(() => setIsListening(false), []);
+  const handleVoiceStart = useCallback(async () => {
+    if (!voiceConnected) {
+      await connectVoice();
+    }
+    startListening();
+  }, [voiceConnected, connectVoice, startListening]);
+
+  const handleVoiceEnd = useCallback(() => {
+    stopListening();
+  }, [stopListening]);
+
+  const handleVoiceOutputToggle = useCallback(async () => {
+    const newEnabled = !voiceOutputEnabled;
+    setVoiceOutputEnabled(newEnabled);
+
+    // Connect to Grok Voice when enabling voice output
+    if (newEnabled && !voiceConnected) {
+      await connectVoice();
+    }
+  }, [voiceOutputEnabled, voiceConnected, connectVoice]);
+
+  // Send assistant messages through Grok Voice when voice output is enabled
+  useEffect(() => {
+    if (!voiceOutputEnabled || !voiceConnected || messages.length === 0) return;
+
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage.role === "assistant" && lastMessage.content) {
+      // Send text to Grok to get voice response
+      sendVoiceText(lastMessage.content);
+    }
+  }, [messages, voiceOutputEnabled, voiceConnected, sendVoiceText]);
 
   return (
     <div className="flex flex-col h-full">
@@ -105,9 +166,21 @@ export default function ChatPage(): JSX.Element {
             Tell me what you want to learn
           </p>
         </div>
-        <div className={cn("flex items-center gap-2 text-sm", statusDisplay.className)}>
-          {statusDisplay.icon}
-          <span>{statusDisplay.text}</span>
+        <div className="flex items-center gap-4">
+          <VoiceSelector
+            value={currentVoice}
+            onChange={setVoice}
+            disabled={isSpeaking}
+          />
+          <VoiceOutputToggle
+            enabled={voiceOutputEnabled}
+            onToggle={handleVoiceOutputToggle}
+            disabled={voiceStatus === "connecting"}
+          />
+          <div className={cn("flex items-center gap-2 text-sm", statusDisplay.className)}>
+            {statusDisplay.icon}
+            <span>{statusDisplay.text}</span>
+          </div>
         </div>
       </header>
 
@@ -144,6 +217,8 @@ export default function ChatPage(): JSX.Element {
         isListening={isListening}
         disabled={!isConnected}
         placeholder={isConnected ? "Type a message..." : "Connecting to SAGE..."}
+        audioLevel={audioLevel}
+        interimTranscript={transcript}
       />
     </div>
   );
