@@ -8,7 +8,7 @@ export interface StreamingIndicatorProps {
   mode?: DialogueMode;
 }
 
-export function StreamingIndicator({ mode }: StreamingIndicatorProps): React.ReactElement {
+export function StreamingIndicator({ mode }: StreamingIndicatorProps): JSX.Element {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
