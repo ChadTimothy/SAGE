@@ -54,6 +54,11 @@ class LearningGraph:
         self._store = GraphStore(db_path)
         self._queries = GraphQueries(self._store)
 
+    @property
+    def store(self) -> GraphStore:
+        """Access the underlying graph store."""
+        return self._store
+
     # =========================================================================
     # Learner Operations
     # =========================================================================
@@ -612,4 +617,9 @@ class LearningGraph:
     def create_edge(self, edge: Edge) -> Edge:
         """Create an edge from a full Edge object."""
         self._store.create_edge(edge)
+        return edge
+
+    def update_edge(self, edge: Edge) -> Edge:
+        """Update an existing edge."""
+        self._store.update_edge(edge)
         return edge

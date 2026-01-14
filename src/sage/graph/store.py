@@ -887,6 +887,17 @@ class GraphStore:
             )
         return edge
 
+    def update_edge(self, edge: Edge) -> Edge:
+        """Update an existing edge's metadata."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE edges SET metadata = ? WHERE id = ?
+                """,
+                (json.dumps(edge.metadata), edge.id),
+            )
+        return edge
+
     def get_edge(self, edge_id: str) -> Optional[Edge]:
         """Get an edge by ID."""
         with self.connection() as conn:
