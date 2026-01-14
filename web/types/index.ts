@@ -129,6 +129,43 @@ export interface WSMessage {
   timestamp?: string;
 }
 
+// Session context types (Set/Setting/Intention)
+export interface SessionContext {
+  timeAvailable: "quick" | "focused" | "deep";
+  energyLevel: number;
+  mindset: string;
+}
+
+// Concept snapshot with status
+export interface ConceptSnapshot {
+  id: string;
+  name: string;
+  display_name: string;
+  status: "proven" | "in_progress" | "identified";
+}
+
+// Application event for upcoming applications
+export interface ApplicationSnapshot {
+  id: string;
+  context: string;
+  planned_date: string | null;
+}
+
+// Outcome snapshot for sidebar
+export interface OutcomeSnapshot {
+  id: string;
+  description: string;
+  status: "active" | "achieved" | "paused" | "abandoned";
+  concepts: ConceptSnapshot[];
+}
+
+// Learner stats for sidebar
+export interface LearnerStats {
+  total_proofs: number;
+  completed_goals: number;
+  total_sessions: number;
+}
+
 // API response types
 export interface ApiError {
   detail: string;

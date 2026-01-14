@@ -11,6 +11,8 @@ import {
   StreamingIndicator,
   EmptyState,
 } from "@/components/chat";
+import { CheckInModal } from "@/components/sidebar";
+import type { SessionContext } from "@/types";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
@@ -20,63 +22,55 @@ interface StatusDisplay {
   className: string;
 }
 
-/**
- * Get the visual display configuration for a connection status
- */
-function getStatusDisplay(status: ConnectionStatus): StatusDisplay {
-  switch (status) {
-    case "connecting":
-      return {
-        icon: <RefreshCw className="h-4 w-4 animate-spin" />,
-        text: "Connecting...",
-        className: "text-yellow-600 dark:text-yellow-400",
-      };
-    case "connected":
-      return {
-        icon: <Wifi className="h-4 w-4" />,
-        text: "Connected",
-        className: "text-green-600 dark:text-green-400",
-      };
-    case "error":
-      return {
-        icon: <WifiOff className="h-4 w-4" />,
-        text: "Connection error",
-        className: "text-red-600 dark:text-red-400",
-      };
-    case "disconnected":
-    default:
-      return {
-        icon: <WifiOff className="h-4 w-4" />,
-        text: "Disconnected",
-        className: "text-slate-500 dark:text-slate-400",
-      };
-  }
-}
+const STATUS_CONFIG: Record<ConnectionStatus, StatusDisplay> = {
+  connecting: {
+    icon: <RefreshCw className="h-4 w-4 animate-spin" />,
+    text: "Connecting...",
+    className: "text-yellow-600 dark:text-yellow-400",
+  },
+  connected: {
+    icon: <Wifi className="h-4 w-4" />,
+    text: "Connected",
+    className: "text-green-600 dark:text-green-400",
+  },
+  error: {
+    icon: <WifiOff className="h-4 w-4" />,
+    text: "Connection error",
+    className: "text-red-600 dark:text-red-400",
+  },
+  disconnected: {
+    icon: <WifiOff className="h-4 w-4" />,
+    text: "Disconnected",
+    className: "text-slate-500 dark:text-slate-400",
+  },
+};
 
-/**
- * Generate a unique session ID (in production, this would come from auth/API)
- */
 function generateSessionId(): string {
   return `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
-export default function ChatPage(): React.ReactElement {
+export default function ChatPage(): JSX.Element {
   const [sessionId] = useState(generateSessionId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isListening, setIsListening] = useState(false);
+  const [showCheckIn, setShowCheckIn] = useState(true);
+  const [sessionContext, setSessionContext] = useState<SessionContext | null>(null);
 
   const { messages, status, isTyping, sendMessage, isConnected } = useChat({
     sessionId,
   });
 
-  const statusDisplay = getStatusDisplay(status);
+  const handleCheckInComplete = useCallback((context: SessionContext) => {
+    setSessionContext(context);
+    setShowCheckIn(false);
+  }, []);
 
-  // Auto-scroll to bottom when new messages arrive
+  const statusDisplay = STATUS_CONFIG[status];
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  // Handle sending a message
   const handleSend = useCallback(
     (content: string) => {
       sendMessage(content, isListening);
@@ -84,7 +78,6 @@ export default function ChatPage(): React.ReactElement {
     [sendMessage, isListening]
   );
 
-  // Handle suggestion click from empty state
   const handleSuggestionClick = useCallback(
     (suggestion: string) => {
       sendMessage(suggestion, false);
@@ -92,20 +85,22 @@ export default function ChatPage(): React.ReactElement {
     [sendMessage]
   );
 
-  // Voice handlers (placeholder for voice feature)
   const handleVoiceStart = useCallback(() => {
     setIsListening(true);
-    // TODO: Implement voice recording
   }, []);
 
   const handleVoiceEnd = useCallback(() => {
     setIsListening(false);
-    // TODO: Stop recording and send audio
   }, []);
 
   return (
     <div className="flex flex-col h-full">
-      {/* Chat header */}
+      <CheckInModal
+        isOpen={showCheckIn && !sessionContext}
+        onClose={() => setShowCheckIn(false)}
+        onComplete={handleCheckInComplete}
+      />
+
       <header className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         <div>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
@@ -121,7 +116,6 @@ export default function ChatPage(): React.ReactElement {
         </div>
       </header>
 
-      {/* Messages area */}
       <div className="flex-1 overflow-y-auto">
         {messages.length === 0 && !isTyping ? (
           <EmptyState onSuggestionClick={handleSuggestionClick} />
@@ -139,18 +133,15 @@ export default function ChatPage(): React.ReactElement {
               ))}
             </AnimatePresence>
 
-            {/* Streaming indicator */}
             <AnimatePresence>
               {isTyping && <StreamingIndicator key="streaming" />}
             </AnimatePresence>
 
-            {/* Scroll anchor */}
             <div ref={messagesEndRef} />
           </div>
         )}
       </div>
 
-      {/* Input area */}
       <ChatInput
         onSend={handleSend}
         onVoiceStart={handleVoiceStart}
