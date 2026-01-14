@@ -385,7 +385,11 @@ class TestPersistence:
         assert updated_session.messages[1].role == "sage"
 
     def test_persist_gap_identified(self, graph, learner, outcome, session):
-        """Test persisting identified gap."""
+        """Test gap_identified is recorded in changes but not created by TurnPersistence.
+
+        Note: Gap creation is now handled by GapFinder in ConversationEngine._persist_turn().
+        TurnPersistence only handles messages, applications, follow-ups, context, and outcomes.
+        """
         changes = TurnChanges(
             user_message="I don't know how to handle objections",
             sage_message="Let's work on that.",
@@ -400,12 +404,20 @@ class TestPersistence:
 
         updated_session = persist_turn(graph, session, changes)
 
-        # Check concept was created
+        # Messages should be persisted
+        assert len(updated_session.messages) == 2
+
+        # Gap creation is handled by GapFinder, not TurnPersistence
+        # So we verify that TurnPersistence doesn't create concepts
         concepts = graph.get_concepts_by_learner(learner.id)
-        assert any(c.name == "handling-objections" for c in concepts)
+        assert not any(c.name == "handling-objections" for c in concepts)
 
     def test_persist_proof_earned(self, graph, learner, concept, session):
-        """Test persisting earned proof."""
+        """Test proof_earned is recorded in changes but not created by TurnPersistence.
+
+        Note: Proof creation is now handled by ProofHandler in ConversationEngine._persist_turn().
+        TurnPersistence only handles messages, applications, follow-ups, context, and outcomes.
+        """
         changes = TurnChanges(
             user_message="I would explain the outcomes they get",
             sage_message="Exactly right!",
@@ -421,17 +433,18 @@ class TestPersistence:
             ),
         )
 
-        # Get initial proof count
-        initial_proofs = learner.total_proofs
-
         updated_session = persist_turn(graph, session, changes)
 
-        # Check proof was created
-        proofs = graph.get_proofs_by_learner(learner.id)
-        assert len(proofs) >= 1
+        # Messages should be persisted
+        assert len(updated_session.messages) == 2
 
-        # Check session tracks proof
-        assert len(updated_session.proofs_earned) == 1
+        # Proof creation is handled by ProofHandler, not TurnPersistence
+        # So we verify that TurnPersistence doesn't create proofs
+        proofs = graph.get_proofs_by_learner(learner.id)
+        assert len(proofs) == 0
+
+        # Session doesn't track proofs_earned (handled by ConversationEngine)
+        assert len(updated_session.proofs_earned) == 0
 
 
 # =============================================================================

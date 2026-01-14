@@ -208,9 +208,9 @@ client = OpenAI(
 - [x] **M1: Graph Store complete** (models, store, queries, LearningGraph interface)
 - [x] **M2: Context Manager complete** (snapshots, FullContext, TurnContext, persistence, insights, applications)
 - [x] **M3: Dialogue Shell complete** (prompt builder, structured output, modes, state detection, conversation loop)
-- [ ] M4: Gap finder
-- [ ] M5: Assessment engine
-- [ ] M6: Integration
+- [x] **M4: Gap Finder complete** (probing context, gap identification, connection discovery, teaching connections)
+- [x] **M5: Assessment complete** (verification, proof creation, confidence scoring)
+- [x] **M6: Integration complete** (GapFinder/ProofHandler wired into ConversationEngine, mode-specific hints, integration tests)
 - [ ] M7: Web UI (JARVIS-like with voice, rich content, graph visualization)
 
 ## Key Concepts to Remember
@@ -390,4 +390,4 @@ Sources:
 
 ---
 
-*Last updated: M1 complete, Web UI milestone added (JARVIS-like experience with voice)*
+*Last updated: M6 Integration complete, all core backend complete. Next: M7 Web UI (JARVIS-like experience with voice)*

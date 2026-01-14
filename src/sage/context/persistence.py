@@ -14,14 +14,11 @@ from sage.graph.models import (
     ApplicationStatus,
     Concept,
     ConceptStatus,
-    DemoType,
     DialogueMode,
     Edge,
     EdgeType,
     Message,
     OutcomeStatus,
-    Proof,
-    ProofExchange,
     Session,
     SessionContext,
 )
@@ -138,73 +135,42 @@ class TurnPersistence:
         session: Session,
         changes: TurnChanges,
     ) -> Session:
-        """Persist all changes from a turn.
+        """Persist turn changes: messages, applications, follow-ups, context, and outcomes.
 
-        Args:
-            session: The current session
-            changes: All changes to persist
-
-        Returns:
-            Updated session
+        Note: gap_identified, proof_earned, and connection_discovered are handled by
+        GapFinder and ProofHandler in ConversationEngine._persist_turn().
         """
-        # ALWAYS: Record messages
-        session = self._add_messages(session, changes)
+        self._add_messages(session, changes)
 
-        # Handle gap identified -> create concept
-        if changes.gap_identified:
-            self._handle_gap_identified(session, changes.gap_identified)
-
-        # Handle proof earned -> create proof, update concept
-        if changes.proof_earned:
-            self._handle_proof_earned(session, changes.proof_earned)
-
-        # Handle connection discovered -> create edge
-        if changes.connection_discovered:
-            self._handle_connection_discovered(session, changes.connection_discovered)
-
-        # Handle application detected -> create event
         if changes.application_detected:
             self._handle_application_detected(session, changes.application_detected)
 
-        # Handle followup response -> update event
         if changes.followup_response:
             self._handle_followup_response(session, changes.followup_response)
 
-        # Handle state change -> update context
         if changes.state_change_detected and changes.context_update:
             session.context = changes.context_update
 
-        # Handle outcome achieved
         if changes.outcome_achieved:
             self._handle_outcome_achieved(session)
 
-        # Save the session
         self.graph.update_session(session)
-
         return session
 
-    def _add_messages(self, session: Session, changes: TurnChanges) -> Session:
+    def _add_messages(self, session: Session, changes: TurnChanges) -> None:
         """Add user and SAGE messages to session."""
-        # User message
+        now = datetime.utcnow()
         session.messages.append(
-            Message(
-                role="user",
-                content=changes.user_message,
-                timestamp=datetime.utcnow(),
-            )
+            Message(role="user", content=changes.user_message, timestamp=now)
         )
-
-        # SAGE message
         session.messages.append(
             Message(
                 role="sage",
                 content=changes.sage_message,
-                timestamp=datetime.utcnow(),
+                timestamp=now,
                 mode=changes.sage_mode.value,
             )
         )
-
-        return session
 
     def _handle_gap_identified(
         self,
@@ -239,83 +205,6 @@ class TurnPersistence:
             session.concepts_explored.append(concept.id)
 
         return concept
-
-    def _handle_proof_earned(
-        self,
-        session: Session,
-        proof_data: ProofEarned,
-    ) -> Proof:
-        """Create proof and update concept status."""
-        proof = Proof(
-            learner_id=session.learner_id,
-            concept_id=proof_data.concept_id,
-            session_id=session.id,
-            demonstration_type=DemoType(proof_data.demonstration_type),
-            evidence=proof_data.evidence,
-            confidence=proof_data.confidence,
-            exchange=ProofExchange(
-                prompt=proof_data.prompt,
-                response=proof_data.response,
-                analysis=proof_data.analysis,
-            ),
-        )
-
-        proof = self.graph.create_proof_obj(proof)
-
-        # Update concept status
-        concept = self.graph.get_concept(proof_data.concept_id)
-        if concept:
-            concept.status = ConceptStatus.UNDERSTOOD
-            concept.understood_at = datetime.utcnow()
-            self.graph.update_concept(concept)
-
-        # Create demonstrated_by edge
-        edge = Edge(
-            from_id=proof_data.concept_id,
-            from_type="concept",
-            to_id=proof.id,
-            to_type="proof",
-            edge_type=EdgeType.DEMONSTRATED_BY,
-        )
-        self.graph.create_edge(edge)
-
-        # Update learner proof count
-        learner = self.graph.get_learner(session.learner_id)
-        if learner:
-            learner.total_proofs += 1
-            self.graph.update_learner(learner)
-
-        # Track in session
-        session.proofs_earned.append(proof.id)
-
-        return proof
-
-    def _handle_connection_discovered(
-        self,
-        session: Session,
-        connection: ConnectionDiscovered,
-    ) -> Edge:
-        """Create relates_to edge for discovered connection."""
-        edge = Edge(
-            from_id=connection.from_concept_id,
-            from_type="concept",
-            to_id=connection.to_concept_id,
-            to_type="concept",
-            edge_type=EdgeType.RELATES_TO,
-            metadata={
-                "relationship": connection.relationship,
-                "strength": connection.strength,
-                "discovered_in": session.id,
-                "used_in_teaching": connection.used_in_teaching,
-            },
-        )
-
-        edge = self.graph.create_edge(edge)
-
-        # Track in session
-        session.connections_found.append(edge.id)
-
-        return edge
 
     def _handle_application_detected(
         self,

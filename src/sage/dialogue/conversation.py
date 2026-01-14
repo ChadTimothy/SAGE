@@ -8,6 +8,7 @@ This module implements the core conversation engine that:
 5. Manages mode transitions
 """
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -16,12 +17,20 @@ from typing import Callable, Optional
 from openai import OpenAI
 
 from sage.context.full_context import FullContext, FullContextLoader
-from sage.context.persistence import TurnChanges, TurnPersistence
+from sage.context.persistence import (
+    ApplicationDetected,
+    ConnectionDiscovered,
+    FollowupResponse,
+    GapIdentified,
+    ProofEarned,
+    StateChange,
+    TurnChanges,
+    TurnPersistence,
+)
 from sage.context.turn_context import TurnContext, TurnContextBuilder
 from sage.dialogue.modes import ModeManager
 from sage.dialogue.prompt_builder import PromptBuilder, build_messages_for_llm
 from sage.dialogue.state_detection import (
-    detect_explicit_signals,
     get_prompt_instructions_for_detection,
 )
 from sage.dialogue.structured_output import (
@@ -33,6 +42,7 @@ from sage.dialogue.structured_output import (
 )
 from sage.graph.learning_graph import LearningGraph
 from sage.graph.models import (
+    Concept,
     DialogueMode,
     Message,
     Session,
@@ -95,10 +105,17 @@ class ConversationEngine:
         self.mode_manager = ModeManager()
         self.persistence = TurnPersistence(graph)
 
+        # Initialize gap finder and proof handler (lazy imports to avoid circular deps)
+        from sage.gaps import create_gap_finder
+        from sage.assessment import create_proof_handler
+        self.gap_finder = create_gap_finder(graph)
+        self.proof_handler = create_proof_handler(graph)
+
         # State
         self.full_context: Optional[FullContext] = None
         self.current_session: Optional[Session] = None
         self.current_mode: Optional[DialogueMode] = None
+        self.current_concept: Optional[Concept] = None
 
     def start_session(
         self,
@@ -195,6 +212,12 @@ class ConversationEngine:
                 f"Mode transition: {self.current_mode} -> {response.transition_to} "
                 f"({response.transition_reason})"
             )
+            # Handle mode-specific actions on transition
+            if response.transition_to == DialogueMode.TEACHING and self.current_concept:
+                # Mark gap as being taught
+                self.gap_finder.start_teaching_gap(self.current_concept.id)
+                logger.info(f"Started teaching gap: {self.current_concept.display_name}")
+
             self.current_mode = response.transition_to
 
         return response
@@ -205,11 +228,7 @@ class ConversationEngine:
     ) -> TurnContext:
         """Build the context for this turn.
 
-        Args:
-            session_context: Optional session context override
-
-        Returns:
-            TurnContext for prompt building
+        Adds mode-specific hints for PROBE and TEACH modes.
         """
         builder = TurnContextBuilder(
             full_context=self.full_context,
@@ -220,7 +239,32 @@ class ConversationEngine:
         if session_context:
             builder.with_session_context(session_context)
 
+        if self.current_concept:
+            builder.with_current_concept(self.current_concept)
+
+        extra_hints = self._get_mode_specific_hints()
+        if extra_hints:
+            builder.with_extra_hints(extra_hints)
+
         return builder.build()
+
+    def _get_mode_specific_hints(self) -> list[str]:
+        """Get hints specific to the current dialogue mode."""
+        if self.current_mode == DialogueMode.PROBING:
+            probing_context = self.gap_finder.build_probing_context(self.full_context)
+            hints = self.gap_finder.get_probing_prompt_hints(probing_context)
+            return [hints] if hints else []
+
+        if self.current_mode == DialogueMode.TEACHING and self.current_concept:
+            connections = self.gap_finder.find_teaching_connections(
+                concept_id=self.current_concept.id,
+                learner_id=self.current_session.learner_id,
+            )
+            if connections:
+                hints = self.gap_finder.get_connection_prompt_hints(connections)
+                return [hints] if hints else []
+
+        return []
 
     def _call_llm(
         self,
@@ -250,11 +294,8 @@ class ConversationEngine:
                 if not content:
                     raise ValueError("Empty response from LLM")
 
-                import json
                 response_data = json.loads(content)
-                response = parse_sage_response(response_data)
-
-                return response
+                return parse_sage_response(response_data)
 
             except Exception as e:
                 logger.error(f"LLM call failed (attempt {attempt + 1}): {e}")
@@ -278,15 +319,6 @@ class ConversationEngine:
             response: The SAGE response
             session_context: Optional session context
         """
-        from sage.context.persistence import (
-            ApplicationDetected,
-            ConnectionDiscovered,
-            FollowupResponse,
-            GapIdentified,
-            ProofEarned,
-            StateChange,
-        )
-
         # Build TurnChanges from SAGEResponse
         changes = TurnChanges(
             user_message=user_message,
@@ -357,7 +389,34 @@ class ConversationEngine:
             )
             changes.context_update = response.context_update or session_context
 
-        # Persist changes
+        # Process gaps and connections via GapFinder
+        if response.gap_identified or response.connection_discovered:
+            gap_result = self.gap_finder.process_response(
+                response=response,
+                learner_id=self.current_session.learner_id,
+                outcome_id=self.current_session.outcome_id,
+                session_id=self.current_session.id,
+            )
+            # Track the newly created concept as current
+            if gap_result.gap_created:
+                self.current_concept = gap_result.gap_created
+                logger.info(f"Set current concept to: {self.current_concept.display_name}")
+
+        # Process proof via ProofHandler
+        if response.proof_earned:
+            proof = self.proof_handler.process_proof_earned(
+                proof_earned=response.proof_earned,
+                learner_id=self.current_session.learner_id,
+                session_id=self.current_session.id,
+            )
+            if proof:
+                logger.info(f"Proof created for concept: {response.proof_earned.concept_id}")
+                # Mark gap as understood if it was the current concept
+                if self.current_concept and self.current_concept.id == response.proof_earned.concept_id:
+                    self.gap_finder.mark_gap_understood(self.current_concept.id)
+                    self.current_concept = None  # Clear after proof earned
+
+        # Persist turn changes (messages, state updates)
         self.current_session = self.persistence.persist(
             self.current_session,
             changes,
@@ -389,6 +448,7 @@ class ConversationEngine:
         self.current_session = None
         self.full_context = None
         self.current_mode = None
+        self.current_concept = None
 
         return session
 
