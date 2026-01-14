@@ -64,11 +64,10 @@ export function CurrentGoal({ outcome, collapsed }: CurrentGoalProps): JSX.Eleme
     <div className="p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-          {isAchieved ? (
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-          ) : (
-            <Target className="h-4 w-4 text-sage-600" />
-          )}
+          {isAchieved
+            ? <CheckCircle2 className="h-4 w-4 text-green-500" />
+            : <Target className="h-4 w-4 text-sage-600" />
+          }
           <span>Current Goal</span>
         </div>
         <span className={cn(

@@ -85,13 +85,8 @@ export default function ChatPage(): JSX.Element {
     [sendMessage]
   );
 
-  const handleVoiceStart = useCallback(() => {
-    setIsListening(true);
-  }, []);
-
-  const handleVoiceEnd = useCallback(() => {
-    setIsListening(false);
-  }, []);
+  const handleVoiceStart = useCallback(() => setIsListening(true), []);
+  const handleVoiceEnd = useCallback(() => setIsListening(false), []);
 
   return (
     <div className="flex flex-col h-full">
@@ -148,11 +143,7 @@ export default function ChatPage(): JSX.Element {
         onVoiceEnd={handleVoiceEnd}
         isListening={isListening}
         disabled={!isConnected}
-        placeholder={
-          isConnected
-            ? "Type a message..."
-            : "Connecting to SAGE..."
-        }
+        placeholder={isConnected ? "Type a message..." : "Connecting to SAGE..."}
       />
     </div>
   );
