@@ -12,7 +12,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import AsyncIterator, Callable, Optional
+from typing import Awaitable, Callable, Optional
 
 from openai import OpenAI
 
@@ -273,7 +273,7 @@ class ConversationEngine:
     async def process_turn_streaming(
         self,
         user_message: str,
-        on_chunk: Callable[[str], None],
+        on_chunk: Callable[[str], Awaitable[None]],
         session_context: Optional[SessionContext] = None,
     ) -> SAGEResponse:
         """Process a conversation turn with streaming output.
@@ -384,7 +384,7 @@ class ConversationEngine:
     async def _call_llm_streaming(
         self,
         messages: list[dict[str, str]],
-        on_chunk: Callable[[str], None],
+        on_chunk: Callable[[str], Awaitable[None]],
     ) -> SAGEResponse:
         """Call the LLM with streaming, sending chunks via callback.
 
