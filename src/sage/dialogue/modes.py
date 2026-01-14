@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from sage.context.full_context import FullContext
-from sage.graph.models import DialogueMode, Outcome, Session
+from sage.graph.models import DialogueMode
 
 
 @dataclass
@@ -224,7 +224,6 @@ def get_mode_prompt_name(mode: DialogueMode) -> str:
 
 
 def should_verify_before_building(
-    session: Session,
     days_since_proof: int,
     concept_is_foundational: bool,
 ) -> bool:
@@ -233,23 +232,18 @@ def should_verify_before_building(
     After a long break, foundational concepts may have decayed.
 
     Args:
-        session: The current session
         days_since_proof: Days since the concept was proven
         concept_is_foundational: Whether this concept is foundational
 
     Returns:
         True if we should verify before building on this concept
     """
-    # If it's been more than 60 days and the concept is foundational,
-    # re-verify before building on it
-    if days_since_proof > 60 and concept_is_foundational:
+    # Foundational concepts decay faster, so verify sooner
+    if concept_is_foundational and days_since_proof > 60:
         return True
 
-    # If it's been more than 90 days for any concept
-    if days_since_proof > 90:
-        return True
-
-    return False
+    # Any concept needs re-verification after 90 days
+    return days_since_proof > 90
 
 
 def get_transition_signals() -> dict[DialogueMode, dict[str, DialogueMode]]:

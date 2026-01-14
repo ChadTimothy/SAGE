@@ -319,38 +319,29 @@ def update_context_for_state_change(
     Returns:
         Updated session context
     """
-    # Create a copy with updated values
-    updated = SessionContext(
-        energy=current_context.energy,
-        time_available=current_context.time_available,
-        mindset=current_context.mindset,
-        intention_strength=current_context.intention_strength,
-        environment=current_context.environment,
-        can_speak=current_context.can_speak,
-        distraction_level=current_context.distraction_level,
-        device=current_context.device,
-        session_goal=current_context.session_goal,
-    )
+    # Use Pydantic's model_copy for clean copying
+    updated = current_context.model_copy()
 
-    # Apply state change effects
-    if state_change == "energy_drop":
-        updated.energy = EnergyLevel.LOW
+    # Define state change effects
+    state_effects = {
+        "energy_drop": {"energy": EnergyLevel.LOW},
+        "time_pressure": {"time_available": "short", "mindset_tag": "time pressured"},
+        "confusion": {"mindset_tag": "needs clarification"},
+        "frustration": {"mindset_tag": "frustrated"},
+        "disengagement": {"energy": EnergyLevel.LOW, "mindset_tag": "disengaged"},
+        "overwhelm": {"mindset_tag": "overwhelmed"},
+    }
 
-    elif state_change == "time_pressure":
-        updated.time_available = "short"
-        updated.mindset = (current_context.mindset or "") + " [time pressured]"
+    effects = state_effects.get(state_change, {})
 
-    elif state_change == "confusion":
-        updated.mindset = (current_context.mindset or "") + " [needs clarification]"
+    if "energy" in effects:
+        updated.energy = effects["energy"]
 
-    elif state_change == "frustration":
-        updated.mindset = (current_context.mindset or "") + " [frustrated]"
+    if "time_available" in effects:
+        updated.time_available = effects["time_available"]
 
-    elif state_change == "disengagement":
-        updated.energy = EnergyLevel.LOW
-        updated.mindset = (current_context.mindset or "") + " [disengaged]"
-
-    elif state_change == "overwhelm":
-        updated.mindset = (current_context.mindset or "") + " [overwhelmed]"
+    if "mindset_tag" in effects:
+        tag = effects["mindset_tag"]
+        updated.mindset = f"{current_context.mindset or ''} [{tag}]".strip()
 
     return updated

@@ -419,16 +419,16 @@ class TestModeHelpers:
         assert DialogueMode.CHECK_IN in signals
         assert "pending_followups_exist" in signals[DialogueMode.CHECK_IN]
 
-    def test_should_verify_before_building(self, sample_session):
+    def test_should_verify_before_building(self):
         """Test decay detection for foundational concepts."""
         # Recently proven, not foundational - no verification needed
-        assert not should_verify_before_building(sample_session, 30, False)
+        assert not should_verify_before_building(30, False)
 
         # Old proof, foundational - verification needed
-        assert should_verify_before_building(sample_session, 70, True)
+        assert should_verify_before_building(70, True)
 
         # Very old proof, any concept - verification needed
-        assert should_verify_before_building(sample_session, 100, False)
+        assert should_verify_before_building(100, False)
 
 
 # =============================================================================
