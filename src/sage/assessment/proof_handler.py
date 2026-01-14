@@ -148,7 +148,8 @@ class ProofHandler:
 
     def has_proof(self, concept_id: str, learner_id: str) -> bool:
         """Check if a learner has proven a concept."""
-        return self.graph.has_proof(concept_id, learner_id)
+        proofs = self.get_proofs_for_concept(concept_id)
+        return any(p.learner_id == learner_id for p in proofs)
 
     def get_latest_proof(self, concept_id: str, learner_id: str) -> Optional[Proof]:
         """Get the most recent proof for a concept."""

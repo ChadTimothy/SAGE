@@ -535,15 +535,46 @@ class TestProofHandler:
         assert handler._parse_demo_type("synthesis") == DemoType.BOTH
         assert handler._parse_demo_type("BOTH") == DemoType.BOTH
 
-    def test_has_proof(self, mock_graph):
+    def test_has_proof(self, mock_graph, proof_exchange):
         """Test checking if proof exists."""
-        mock_graph.has_proof.return_value = True
+        mock_graph.get_proofs_by_concept.return_value = [
+            Proof(
+                id="proof-1",
+                concept_id="concept-1",
+                learner_id="learner-1",
+                session_id="session-1",
+                demonstration_type=DemoType.EXPLANATION,
+                evidence="Test evidence",
+                confidence=0.8,
+                exchange=proof_exchange,
+            )
+        ]
 
         handler = ProofHandler(mock_graph)
         result = handler.has_proof("concept-1", "learner-1")
 
         assert result is True
-        mock_graph.has_proof.assert_called_once_with("concept-1", "learner-1")
+        mock_graph.get_proofs_by_concept.assert_called_once_with("concept-1")
+
+    def test_has_proof_wrong_learner(self, mock_graph, proof_exchange):
+        """Test has_proof returns False for wrong learner."""
+        mock_graph.get_proofs_by_concept.return_value = [
+            Proof(
+                id="proof-1",
+                concept_id="concept-1",
+                learner_id="learner-2",  # Different learner
+                session_id="session-1",
+                demonstration_type=DemoType.EXPLANATION,
+                evidence="Test evidence",
+                confidence=0.8,
+                exchange=proof_exchange,
+            )
+        ]
+
+        handler = ProofHandler(mock_graph)
+        result = handler.has_proof("concept-1", "learner-1")
+
+        assert result is False
 
     def test_create_proof_handler_factory(self, mock_graph):
         """Test the factory function."""
