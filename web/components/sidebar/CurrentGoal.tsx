@@ -1,8 +1,7 @@
 "use client";
 
-import { Target, Check, Circle, Loader2 } from "lucide-react";
+import { Target, Check, Circle, Loader2, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ProgressBar } from "./ProgressBar";
 import type { OutcomeSnapshot, ConceptSnapshot } from "@/types";
 
 export interface CurrentGoalProps {
@@ -19,6 +18,20 @@ function getStatusIcon(status: ConceptSnapshot["status"]): JSX.Element {
     case "identified":
     default:
       return <Circle className="h-3 w-3 text-slate-400" />;
+  }
+}
+
+function getOutcomeStatusLabel(status: OutcomeSnapshot["status"]): string {
+  switch (status) {
+    case "achieved":
+      return "You can do this!";
+    case "paused":
+      return "Paused";
+    case "abandoned":
+      return "Set aside";
+    case "active":
+    default:
+      return "Working toward";
   }
 }
 
@@ -45,39 +58,46 @@ export function CurrentGoal({ outcome, collapsed }: CurrentGoalProps): JSX.Eleme
     );
   }
 
-  const provenCount = outcome.concepts.filter((c) => c.status === "proven").length;
-  const totalConcepts = outcome.concepts.length;
+  const isAchieved = outcome.status === "achieved";
 
   return (
     <div className="p-4 space-y-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-        <Target className="h-4 w-4 text-sage-600" />
-        <span>Current Goal</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+          {isAchieved ? (
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+          ) : (
+            <Target className="h-4 w-4 text-sage-600" />
+          )}
+          <span>Current Goal</span>
+        </div>
+        <span className={cn(
+          "text-xs font-medium px-2 py-0.5 rounded-full",
+          isAchieved
+            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+            : "bg-sage-100 text-sage-700 dark:bg-sage-900/30 dark:text-sage-400"
+        )}>
+          {getOutcomeStatusLabel(outcome.status)}
+        </span>
       </div>
 
       <p className="text-sm text-slate-900 dark:text-white font-medium">
         {outcome.description}
       </p>
 
-      {totalConcepts > 0 && (
-        <>
-          <ProgressBar current={provenCount} total={totalConcepts} />
-
-          <ul className="space-y-1.5">
+      {outcome.concepts.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Areas explored:
+          </p>
+          <ul className="space-y-1">
             {outcome.concepts.slice(0, 5).map((concept) => (
               <li
                 key={concept.id}
-                className={cn(
-                  "flex items-center gap-2 text-xs",
-                  concept.status === "proven"
-                    ? "text-slate-600 dark:text-slate-400"
-                    : "text-slate-500 dark:text-slate-500"
-                )}
+                className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400"
               >
                 {getStatusIcon(concept.status)}
-                <span className={concept.status === "proven" ? "line-through" : ""}>
-                  {concept.display_name}
-                </span>
+                <span>{concept.display_name}</span>
               </li>
             ))}
             {outcome.concepts.length > 5 && (
@@ -86,7 +106,7 @@ export function CurrentGoal({ outcome, collapsed }: CurrentGoalProps): JSX.Eleme
               </li>
             )}
           </ul>
-        </>
+        </div>
       )}
     </div>
   );
