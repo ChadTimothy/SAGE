@@ -207,7 +207,7 @@ client = OpenAI(
 - [x] Prompt templates created (starter templates for all 8 modes)
 - [x] **M1: Graph Store complete** (models, store, queries, LearningGraph interface)
 - [x] **M2: Context Manager complete** (snapshots, FullContext, TurnContext, persistence, insights, applications)
-- [ ] M3: Dialogue engine
+- [x] **M3: Dialogue Shell complete** (prompt builder, structured output, modes, state detection, conversation loop)
 - [ ] M4: Gap finder
 - [ ] M5: Assessment engine
 - [ ] M6: Integration
