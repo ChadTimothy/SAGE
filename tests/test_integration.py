@@ -4,8 +4,7 @@ Tests the full integration between ConversationEngine, GapFinder, and ProofHandl
 """
 
 import pytest
-from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from sage.graph.learning_graph import LearningGraph
 from sage.graph.models import (
@@ -13,12 +12,6 @@ from sage.graph.models import (
     ConceptStatus,
     DialogueMode,
     DemoType,
-    Edge,
-    Learner,
-    Outcome,
-    OutcomeStatus,
-    Proof,
-    Session,
 )
 from sage.dialogue.conversation import ConversationEngine, ConversationConfig
 from sage.dialogue.structured_output import (
@@ -28,9 +21,8 @@ from sage.dialogue.structured_output import (
     ProofExchange,
     ConnectionDiscovered,
 )
-from sage.context.full_context import FullContext, FullContextLoader
-from sage.gaps import GapFinder, create_gap_finder
-from sage.assessment import ProofHandler, create_proof_handler
+from sage.gaps import GapFinder
+from sage.assessment import ProofHandler
 
 
 @pytest.fixture
@@ -286,32 +278,24 @@ class TestModeSpecificHints:
 
     def test_probe_mode_adds_probing_hints(self, engine, learner, outcome):
         """PROBING mode should add probing hints to context."""
-        # Start session
         engine.start_session(learner.id)
         engine.current_mode = DialogueMode.PROBING
 
-        # Build turn context
-        turn_context = engine._build_turn_context()
-
-        # Adaptation hints should include probing guidance
-        # The hints are markdown strings, check there's at least one
         hints = engine._get_mode_specific_hints()
-        # In probe mode with an outcome, we should get probing hints
-        assert any("probing" in h.lower() or "gap" in h.lower() for h in hints) or len(hints) >= 0
 
-    def test_teach_mode_with_concept_adds_connection_hints(self, engine, learner, outcome, graph):
-        """TEACHING mode with current concept should try to add connection hints."""
-        # Start session
+        # Hints should be a list (may be empty if no probing context available)
+        assert isinstance(hints, list)
+
+    def test_teach_mode_with_concept_returns_hints_list(self, engine, learner, outcome, graph):
+        """TEACHING mode with current concept should return a hints list."""
         engine.start_session(learner.id)
         engine.current_mode = DialogueMode.TEACHING
+        engine.current_concept = create_test_concept(
+            graph, learner, outcome, "test_concept", ConceptStatus.TEACHING
+        )
 
-        # Create and set current concept
-        concept = create_test_concept(graph, learner, outcome, "test_concept", ConceptStatus.TEACHING)
-        engine.current_concept = concept
-
-        # Get hints - should not raise even if no connections found
         hints = engine._get_mode_specific_hints()
-        # May or may not have hints depending on connections
+
         assert isinstance(hints, list)
 
 

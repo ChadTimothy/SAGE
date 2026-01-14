@@ -8,6 +8,7 @@ This module implements the core conversation engine that:
 5. Manages mode transitions
 """
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -16,12 +17,20 @@ from typing import Callable, Optional
 from openai import OpenAI
 
 from sage.context.full_context import FullContext, FullContextLoader
-from sage.context.persistence import TurnChanges, TurnPersistence
+from sage.context.persistence import (
+    ApplicationDetected,
+    ConnectionDiscovered,
+    FollowupResponse,
+    GapIdentified,
+    ProofEarned,
+    StateChange,
+    TurnChanges,
+    TurnPersistence,
+)
 from sage.context.turn_context import TurnContext, TurnContextBuilder
 from sage.dialogue.modes import ModeManager
 from sage.dialogue.prompt_builder import PromptBuilder, build_messages_for_llm
 from sage.dialogue.state_detection import (
-    detect_explicit_signals,
     get_prompt_instructions_for_detection,
 )
 from sage.dialogue.structured_output import (
@@ -39,9 +48,6 @@ from sage.graph.models import (
     Session,
     SessionContext,
 )
-# Imported lazily to avoid circular imports
-# from sage.gaps import GapFinder, create_gap_finder
-# from sage.assessment import ProofHandler, create_proof_handler
 
 
 logger = logging.getLogger(__name__)
@@ -222,15 +228,7 @@ class ConversationEngine:
     ) -> TurnContext:
         """Build the context for this turn.
 
-        Adds mode-specific hints:
-        - PROBE mode: Probing guidance from GapFinder
-        - TEACH mode: Teaching connection hints from GapFinder
-
-        Args:
-            session_context: Optional session context override
-
-        Returns:
-            TurnContext for prompt building
+        Adds mode-specific hints for PROBE and TEACH modes.
         """
         builder = TurnContextBuilder(
             full_context=self.full_context,
@@ -244,7 +242,6 @@ class ConversationEngine:
         if self.current_concept:
             builder.with_current_concept(self.current_concept)
 
-        # Add mode-specific hints
         extra_hints = self._get_mode_specific_hints()
         if extra_hints:
             builder.with_extra_hints(extra_hints)
@@ -252,32 +249,22 @@ class ConversationEngine:
         return builder.build()
 
     def _get_mode_specific_hints(self) -> list[str]:
-        """Get hints specific to the current dialogue mode.
-
-        Returns:
-            List of hint strings for LLM adaptation
-        """
-        hints = []
-
+        """Get hints specific to the current dialogue mode."""
         if self.current_mode == DialogueMode.PROBING:
-            # Add probing guidance
             probing_context = self.gap_finder.build_probing_context(self.full_context)
-            probing_hints = self.gap_finder.get_probing_prompt_hints(probing_context)
-            if probing_hints:
-                hints.append(probing_hints)
+            hints = self.gap_finder.get_probing_prompt_hints(probing_context)
+            return [hints] if hints else []
 
-        elif self.current_mode == DialogueMode.TEACHING and self.current_concept:
-            # Add teaching connection hints
+        if self.current_mode == DialogueMode.TEACHING and self.current_concept:
             connections = self.gap_finder.find_teaching_connections(
                 concept_id=self.current_concept.id,
                 learner_id=self.current_session.learner_id,
             )
             if connections:
-                connection_hints = self.gap_finder.get_connection_prompt_hints(connections)
-                if connection_hints:
-                    hints.append(connection_hints)
+                hints = self.gap_finder.get_connection_prompt_hints(connections)
+                return [hints] if hints else []
 
-        return hints
+        return []
 
     def _call_llm(
         self,
@@ -307,11 +294,8 @@ class ConversationEngine:
                 if not content:
                     raise ValueError("Empty response from LLM")
 
-                import json
                 response_data = json.loads(content)
-                response = parse_sage_response(response_data)
-
-                return response
+                return parse_sage_response(response_data)
 
             except Exception as e:
                 logger.error(f"LLM call failed (attempt {attempt + 1}): {e}")
@@ -335,15 +319,6 @@ class ConversationEngine:
             response: The SAGE response
             session_context: Optional session context
         """
-        from sage.context.persistence import (
-            ApplicationDetected,
-            ConnectionDiscovered,
-            FollowupResponse,
-            GapIdentified,
-            ProofEarned,
-            StateChange,
-        )
-
         # Build TurnChanges from SAGEResponse
         changes = TurnChanges(
             user_message=user_message,

@@ -44,7 +44,6 @@ class ProofHandler:
             demo_type = self._parse_demo_type(proof_earned.demonstration_type)
             confidence = proof_earned.confidence or calculate_confidence(demo_type, proof_earned.exchange)
 
-            # Convert structured_output.ProofExchange to graph.models.ProofExchange
             exchange = ProofExchange(
                 prompt=proof_earned.exchange.prompt,
                 response=proof_earned.exchange.response,
@@ -61,11 +60,10 @@ class ProofHandler:
                 exchange=exchange,
             )
 
-            if proof:
-                self.mark_concept_understood(proof_earned.concept_id)
-                self.create_demonstrated_by_edge(proof_earned.concept_id, proof.id)
-                self.increment_learner_proofs(learner_id)
-                logger.info(f"Processed proof for concept {proof_earned.concept_id}: confidence={confidence:.2f}")
+            self.mark_concept_understood(proof_earned.concept_id)
+            self.create_demonstrated_by_edge(proof_earned.concept_id, proof.id)
+            self.increment_learner_proofs(learner_id)
+            logger.info(f"Processed proof for concept {proof_earned.concept_id}: confidence={confidence:.2f}")
 
             return proof
 
@@ -142,10 +140,9 @@ class ProofHandler:
     def _parse_demo_type(self, demo_type_str: str) -> DemoType:
         """Parse demonstration type string to enum."""
         lower = demo_type_str.lower()
-
-        if "both" in lower or "synthesis" in lower:
+        if any(term in lower for term in ["both", "synthesis"]):
             return DemoType.BOTH
-        if "application" in lower or "apply" in lower:
+        if any(term in lower for term in ["application", "apply"]):
             return DemoType.APPLICATION
         return DemoType.EXPLANATION
 
