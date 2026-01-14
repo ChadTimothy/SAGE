@@ -65,16 +65,22 @@ SAGE/
 │       ├── teaching.md                    ← Fill the gap (with adaptation)
 │       ├── verification.md                ← Check understanding, create proof
 │       └── outcome_check.md               ← Can they do the thing?
-├── src/sage/                              ← Python package
+├── src/sage/                              ← Python backend
 │   ├── core/                              ← Config, utilities, logging
 │   ├── graph/                             ← Learning Graph (models, store, queries)
-│   ├── dialogue/                          ← Conversation engine (modes, voice)
+│   ├── context/                           ← Context management (FullContext, TurnContext)
+│   ├── dialogue/                          ← Conversation engine (modes, transitions)
 │   ├── gaps/                              ← Gap finding (replaces path planning)
 │   ├── assessment/                        ← Probing, verification, proof creation
 │   ├── learner/                           ← Learner state, sessions
-│   └── api/                               ← CLI interface
+│   └── api/                               ← FastAPI backend + WebSocket
+├── web/                                   ← Next.js frontend
+│   ├── app/                               ← App Router pages
+│   ├── components/                        ← React components
+│   ├── lib/                               ← API client, utilities
+│   └── hooks/                             ← Custom React hooks
 ├── tests/                                 ← Test suite
-├── pyproject.toml                         ← Project config and dependencies
+├── pyproject.toml                         ← Python project config
 └── .env.example                           ← Environment variable template
 ```
 
@@ -150,13 +156,29 @@ Learn concept → Apply in real world → Report back → Identify gaps → Fill
    - Cross-session continuity
    - Insights learning over time
 
+8. **Web UI**
+   - FastAPI backend with WebSocket streaming
+   - Next.js frontend with conversation UI
+   - Voice input/output (JARVIS-like)
+   - Rich content (diagrams, code, math)
+   - Progress sidebar and knowledge graph visualization
+   - Practice/roleplay mode
+
 ## Technical Stack
 
+### Backend (Python)
 - **Python**: 3.11+
 - **Data Models**: Pydantic v2
 - **Database**: SQLite (built-in)
+- **API**: FastAPI + WebSocket (streaming)
 - **LLM**: OpenAI SDK (works with Grok/xAI, OpenAI, Anthropic via base_url swap)
-- **CLI**: Typer
+
+### Frontend (Web)
+- **Framework**: Next.js 14 (App Router)
+- **Styling**: Tailwind CSS + shadcn/ui
+- **Content**: React Markdown, Mermaid.js, KaTeX
+- **Voice**: Web Speech API + OpenAI Whisper
+- **Visualization**: vis-network (knowledge graph)
 
 ### LLM Configuration
 
@@ -183,12 +205,13 @@ client = OpenAI(
 - [x] Data model complete (includes Session Context, Messages, LearnerInsights)
 - [x] Context management design complete (what AI needs each turn, structured output strategy)
 - [x] Prompt templates created (starter templates for all 8 modes)
-- [ ] Graph store implementation
-- [ ] Context manager implementation
-- [ ] Dialogue engine
-- [ ] Gap finder
-- [ ] Assessment engine
-- [ ] CLI
+- [x] **M1: Graph Store complete** (models, store, queries, LearningGraph interface)
+- [ ] M2: Context manager implementation
+- [ ] M3: Dialogue engine
+- [ ] M4: Gap finder
+- [ ] M5: Assessment engine
+- [ ] M6: Integration
+- [ ] M7: Web UI (JARVIS-like with voice, rich content, graph visualization)
 
 ## Key Concepts to Remember
 
@@ -300,12 +323,13 @@ Every piece of work has a GitHub issue. This enables:
 
 | Milestone | Focus | Issues |
 |-----------|-------|--------|
-| M1: Graph Store | Pydantic models, SQLite, queries | #1-4, #22 |
-| M2: Context Manager | FullContext, TurnContext, persistence | #5-8 |
-| M3: Dialogue Shell | Prompts, structured output, modes | #9-12 |
+| M1: Graph Store | Pydantic models, SQLite, queries | #1-4, #22 ✅ |
+| M2: Context Manager | FullContext, TurnContext, persistence, snapshots | #5-8, #23-24 |
+| M3: Dialogue Shell | Prompts, structured output, modes, state detection | #9-12, #25 |
 | M4: Gap Finder | Probing, gap identification, connections | #13-15 |
 | M5: Assessment | Verification, proofs, confidence | #16-18 |
-| M6: Integration & CLI | Full loop, continuity, CLI | #19-21 |
+| M6: Integration | Full loop, cross-session continuity | #19-20 |
+| M7: Web UI | FastAPI, Next.js, voice, rich content, graph viz | #26-33 |
 
 ### AI Session Protocol
 
@@ -366,4 +390,4 @@ Sources:
 
 ---
 
-*Last updated: GitHub project setup complete, ready for implementation*
+*Last updated: M1 complete, Web UI milestone added (JARVIS-like experience with voice)*
