@@ -54,23 +54,15 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def _create_engine(
-    graph: LearningGraph, session_id: str
-) -> Optional[ConversationEngine]:
-    """Create conversation engine for session."""
-    session = graph.get_session(session_id)
-    if not session:
-        return None
-
+def _create_engine(graph: LearningGraph) -> ConversationEngine:
+    """Create conversation engine with settings."""
     settings = get_settings()
-    return ConversationEngine(
+    from sage.dialogue.conversation import create_conversation_engine
+    return create_conversation_engine(
         graph=graph,
-        learner_id=session.learner_id,
-        session_id=session_id,
-        outcome_id=session.outcome_id,
-        llm_base_url=settings.llm_base_url,
-        llm_api_key=settings.llm_api_key,
-        llm_model=settings.llm_model,
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+        model=settings.llm_model,
     )
 
 
@@ -115,34 +107,17 @@ async def websocket_chat(
     await manager.connect(session_id, websocket)
     logger.info(f"WebSocket connected for session {session_id}")
 
+    engine = _create_engine(graph)
+
     try:
-        engine = _create_engine(graph, session_id)
-        if not engine:
-            await manager.send_error(session_id, "Failed to initialize engine")
-            return
+        engine.resume_session(session_id)
+    except ValueError as e:
+        await manager.send_error(session_id, str(e))
+        manager.disconnect(session_id)
+        return
 
-        while True:
-            data = await websocket.receive_json()
-            msg_type = data.get("type", "message")
-            content = data.get("content", "")
-
-            if msg_type == "voice" and data.get("audio") and not content:
-                await manager.send_error(
-                    session_id, "Voice transcription not yet implemented"
-                )
-                continue
-
-            if not content:
-                await manager.send_error(session_id, "Empty message")
-                continue
-
-            try:
-                response = engine.process_turn(content)
-                await manager.send_complete(session_id, _response_to_dict(response))
-            except Exception as e:
-                logger.error(f"Error processing message: {e}")
-                await manager.send_error(session_id, str(e))
-
+    try:
+        await _handle_messages(session_id, engine)
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for session {session_id}")
     except Exception as e:
@@ -150,3 +125,44 @@ async def websocket_chat(
         await manager.send_error(session_id, str(e))
     finally:
         manager.disconnect(session_id)
+
+
+async def _handle_messages(session_id: str, engine: ConversationEngine) -> None:
+    """Process incoming messages in the WebSocket loop."""
+    websocket = manager.active_connections.get(session_id)
+    if not websocket:
+        return
+
+    while True:
+        data = await websocket.receive_json()
+        msg_type = data.get("type", "message")
+        content = data.get("content", "")
+
+        if msg_type == "voice" and data.get("audio") and not content:
+            await manager.send_error(
+                session_id, "Voice transcription not yet implemented"
+            )
+            continue
+
+        if not content:
+            await manager.send_error(session_id, "Empty message")
+            continue
+
+        await _process_message(session_id, engine, content)
+
+
+async def _process_message(
+    session_id: str,
+    engine: ConversationEngine,
+    content: str,
+) -> None:
+    """Process a single message and send response via streaming."""
+    try:
+        async def send_chunk(chunk: str) -> None:
+            await manager.send_chunk(session_id, chunk)
+
+        response = await engine.process_turn_streaming(content, on_chunk=send_chunk)
+        await manager.send_complete(session_id, _response_to_dict(response))
+    except Exception as e:
+        logger.error(f"Error processing message: {e}")
+        await manager.send_error(session_id, str(e))
