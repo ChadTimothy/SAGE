@@ -302,12 +302,26 @@ class GapFinder:
     def has_more_gaps(self, outcome_id: str) -> bool:
         """Check if there are more gaps to resolve.
 
+        DEPRECATED: This method represents queue-based thinking which violates
+        SAGE's iterate/discover philosophy. After teaching a gap, the system
+        should probe to discover the next gap, not check a queue.
+
+        Use get_current_gap() to check if teaching is in progress, or
+        return to PROBING mode to discover what's needed next.
+
         Args:
             outcome_id: The outcome ID
 
         Returns:
             True if unresolved gaps exist
         """
+        import warnings
+        warnings.warn(
+            "has_more_gaps() is deprecated. Use probing to discover gaps "
+            "instead of checking a queue. See issue #39.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return bool(self.get_unresolved_gaps(outcome_id))
 
 

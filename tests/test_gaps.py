@@ -295,7 +295,9 @@ class TestGapStore:
         assert concept.name == "handling-objections"
         assert concept.display_name == "Handling Objections"
         assert concept.learner_id == learner.id
-        assert concept.status == ConceptStatus.IDENTIFIED
+        # Concepts are created with TEACHING status (not IDENTIFIED)
+        # per SAGE philosophy: graph records what happened, not what's planned
+        assert concept.status == ConceptStatus.TEACHING
 
     def test_link_gap_to_outcome(self, graph, learner, outcome):
         """Test linking gap concept to outcome."""
@@ -323,8 +325,10 @@ class TestGapStore:
         )
 
         concept = store.create_concept_from_gap(gap, learner.id)
-        assert concept.status == ConceptStatus.IDENTIFIED
+        # Concepts now created with TEACHING status directly
+        assert concept.status == ConceptStatus.TEACHING
 
+        # mark_teaching_started is now idempotent (no-op if already TEACHING)
         updated = store.mark_teaching_started(concept.id)
         assert updated.status == ConceptStatus.TEACHING
 
@@ -332,10 +336,10 @@ class TestGapStore:
         assert understood.status == ConceptStatus.UNDERSTOOD
 
     def test_get_unresolved_gaps(self, graph, learner, outcome):
-        """Test getting unresolved gaps."""
+        """Test getting unresolved gaps (concepts in TEACHING status)."""
         store = GapStore(graph)
 
-        # Create two gaps
+        # Create two gaps - both start in TEACHING status
         gap1 = GapIdentified(
             name="gap-1",
             display_name="Gap 1",
@@ -350,9 +354,14 @@ class TestGapStore:
         c1 = store.create_concept_from_gap(gap1, learner.id, outcome.id)
         c2 = store.create_concept_from_gap(gap2, learner.id, outcome.id)
 
+        # Both are in TEACHING status
+        unresolved = store.get_unresolved_gaps(outcome.id)
+        assert len(unresolved) == 2
+
         # Mark one as understood
         store.mark_understood(c1.id)
 
+        # Only c2 remains in TEACHING status
         unresolved = store.get_unresolved_gaps(outcome.id)
         assert len(unresolved) == 1
         assert unresolved[0].id == c2.id
@@ -717,9 +726,10 @@ class TestGapFinder:
         result = finder.process_response(response, learner.id, outcome.id)
         concept = result.gap_created
 
-        assert concept.status == ConceptStatus.IDENTIFIED
+        # Concepts are now created with TEACHING status directly
+        assert concept.status == ConceptStatus.TEACHING
 
-        # Start teaching
+        # start_teaching_gap is idempotent (already in TEACHING)
         teaching = finder.start_teaching_gap(concept.id)
         assert teaching.status == ConceptStatus.TEACHING
 
@@ -735,14 +745,24 @@ class TestGapFinder:
         current = finder.get_current_gap(outcome.id)
         assert current is None
 
-    def test_has_more_gaps(self, graph, learner, outcome):
-        """Test checking for more gaps."""
+    def test_has_more_gaps_deprecated(self, graph, learner, outcome):
+        """Test has_more_gaps emits deprecation warning.
+
+        Note: has_more_gaps() is deprecated because it represents queue-based
+        thinking. SAGE should probe to discover gaps, not check a queue.
+        """
+        import warnings
         finder = GapFinder(graph)
 
-        # Initially no gaps
-        assert not finder.has_more_gaps(outcome.id)
+        # Should emit deprecation warning
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            finder.has_more_gaps(outcome.id)
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "deprecated" in str(w[0].message).lower()
 
-        # Add a gap
+        # Add a gap to test functionality still works
         gap = GapIdentified(
             name="more-gaps-test",
             display_name="More Gaps Test",
@@ -755,14 +775,17 @@ class TestGapFinder:
         )
         result = finder.process_response(response, learner.id, outcome.id)
 
-        # Now has gaps
-        assert finder.has_more_gaps(outcome.id)
+        # Suppress warning for remaining assertions
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            # Now has gaps (concept in TEACHING status)
+            assert finder.has_more_gaps(outcome.id)
 
-        # Mark understood
-        finder.mark_gap_understood(result.gap_created.id)
+            # Mark understood
+            finder.mark_gap_understood(result.gap_created.id)
 
-        # No more gaps
-        assert not finder.has_more_gaps(outcome.id)
+            # No more gaps
+            assert not finder.has_more_gaps(outcome.id)
 
     def test_get_probing_prompt_hints(self, graph, probing_context):
         """Test getting probing prompt hints."""

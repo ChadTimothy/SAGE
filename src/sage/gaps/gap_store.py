@@ -54,13 +54,16 @@ class GapStore:
         """
         concept_id = str(uuid4())
 
+        # Create with TEACHING status - concepts are only persisted when
+        # teaching starts, not when identified (graph records what happened,
+        # not what's planned - see CLAUDE.md)
         concept = Concept(
             id=concept_id,
             name=gap.name,
             display_name=gap.display_name,
             description=gap.description,
             learner_id=learner_id,
-            status=ConceptStatus.IDENTIFIED,
+            status=ConceptStatus.TEACHING,
             discovered_from=outcome_id,
             discovered_at=datetime.utcnow(),
         )
@@ -136,6 +139,10 @@ class GapStore:
     def mark_teaching_started(self, concept_id: str) -> Optional[Concept]:
         """Mark a concept as being taught.
 
+        Note: Since concepts are now created with TEACHING status when
+        persisted (see create_concept_from_gap), this method is idempotent.
+        Kept for backward compatibility and explicit state transitions.
+
         Args:
             concept_id: The concept ID
 
@@ -167,16 +174,22 @@ class GapStore:
         return self.graph.get_concepts_for_outcome(outcome_id)
 
     def get_unresolved_gaps(self, outcome_id: str) -> list[Concept]:
-        """Get gaps that haven't been proven yet.
+        """Get gaps that are currently being taught (not yet understood).
+
+        Note: Since concepts are now created with TEACHING status, this
+        returns concepts actively being taught. Once understood, they
+        are marked UNDERSTOOD and excluded.
+
+        Consider using get_current_gap() for the active teaching concept.
 
         Args:
             outcome_id: The outcome ID
 
         Returns:
-            List of concepts not yet understood
+            List of concepts in TEACHING status
         """
         all_concepts = self.get_gaps_for_outcome(outcome_id)
-        return [c for c in all_concepts if c.status != ConceptStatus.UNDERSTOOD]
+        return [c for c in all_concepts if c.status == ConceptStatus.TEACHING]
 
     def get_current_gap(self, outcome_id: str) -> Optional[Concept]:
         """Get the concept currently being taught.
