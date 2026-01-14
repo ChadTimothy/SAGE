@@ -309,6 +309,10 @@ class LearningGraph:
         """Check if a concept has any proofs."""
         return bool(self._store.get_proofs_by_concept(concept_id))
 
+    def get_proofs_by_concept(self, concept_id: str) -> list[Proof]:
+        """Get all proofs for a specific concept."""
+        return self._store.get_proofs_by_concept(concept_id)
+
     # =========================================================================
     # Session Operations
     # =========================================================================

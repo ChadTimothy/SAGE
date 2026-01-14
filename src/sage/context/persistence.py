@@ -140,6 +140,10 @@ class TurnPersistence:
     ) -> Session:
         """Persist all changes from a turn.
 
+        Note: gap_identified, proof_earned, and connection_discovered are now
+        handled by GapFinder and ProofHandler in ConversationEngine._persist_turn().
+        This method only handles messages, applications, follow-ups, context, and outcomes.
+
         Args:
             session: The current session
             changes: All changes to persist
@@ -150,17 +154,8 @@ class TurnPersistence:
         # ALWAYS: Record messages
         session = self._add_messages(session, changes)
 
-        # Handle gap identified -> create concept
-        if changes.gap_identified:
-            self._handle_gap_identified(session, changes.gap_identified)
-
-        # Handle proof earned -> create proof, update concept
-        if changes.proof_earned:
-            self._handle_proof_earned(session, changes.proof_earned)
-
-        # Handle connection discovered -> create edge
-        if changes.connection_discovered:
-            self._handle_connection_discovered(session, changes.connection_discovered)
+        # NOTE: gap_identified, proof_earned, and connection_discovered
+        # are handled by GapFinder and ProofHandler in ConversationEngine
 
         # Handle application detected -> create event
         if changes.application_detected:

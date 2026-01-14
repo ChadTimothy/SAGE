@@ -73,34 +73,86 @@ class TurnContextBuilder:
     # How many recent messages to include
     DEFAULT_MESSAGE_LIMIT = 20
 
-    def __init__(self, full_context: FullContext, session: Session):
+    def __init__(
+        self,
+        full_context: FullContext,
+        session: Session,
+        mode: Optional[DialogueMode] = None,
+    ):
         """Initialize with loaded context and current session.
 
         Args:
             full_context: The eagerly loaded session context
             session: The current session being worked on
+            mode: Optional dialogue mode (can also be set in build())
         """
         self.full = full_context
         self.session = session
+        self._mode = mode
+        self._session_context: Optional[SessionContext] = None
+        self._current_concept: Optional[Concept] = None
+        self._extra_hints: list[str] = []
         self._concept_name_map = {c.id: c.display_name for c in full_context.all_concepts}
         self._proof_by_concept = {p.concept_id: p for p in full_context.proofs}
 
+    def with_session_context(self, session_context: SessionContext) -> "TurnContextBuilder":
+        """Set session context for this turn.
+
+        Args:
+            session_context: The Set/Setting/Intention context
+
+        Returns:
+            Self for chaining
+        """
+        self._session_context = session_context
+        return self
+
+    def with_current_concept(self, concept: Concept) -> "TurnContextBuilder":
+        """Set the current concept being worked on.
+
+        Args:
+            concept: The concept being taught/verified
+
+        Returns:
+            Self for chaining
+        """
+        self._current_concept = concept
+        return self
+
+    def with_extra_hints(self, hints: list[str]) -> "TurnContextBuilder":
+        """Add extra adaptation hints (e.g., probing or teaching hints).
+
+        Args:
+            hints: Additional hints for LLM adaptation
+
+        Returns:
+            Self for chaining
+        """
+        self._extra_hints.extend(hints)
+        return self
+
     def build(
         self,
-        mode: DialogueMode,
+        mode: Optional[DialogueMode] = None,
         current_concept: Optional[Concept] = None,
         message_limit: int = DEFAULT_MESSAGE_LIMIT,
     ) -> TurnContext:
         """Build context for this turn.
 
         Args:
-            mode: The current dialogue mode
-            current_concept: The concept being worked on (if any)
+            mode: The current dialogue mode (uses builder-set mode if not provided)
+            current_concept: The concept being worked on (uses builder-set concept if not provided)
             message_limit: Max recent messages to include
 
         Returns:
             TurnContext ready for LLM prompt
         """
+        # Use builder-set values if not provided as arguments
+        effective_mode = mode or self._mode
+        if not effective_mode:
+            raise ValueError("Mode must be set either in constructor or build()")
+        effective_concept = current_concept or self._current_concept
+
         # Build learner snapshot
         learner_snapshot = LearnerSnapshot.from_learner(self.full.learner)
 
@@ -113,35 +165,39 @@ class TurnContextBuilder:
                 outcome=self.full.active_outcome,
                 concepts=self.full.outcome_concepts,
                 proofs=self.full.proofs,
-                current_concept=current_concept,
+                current_concept=effective_concept,
             )
 
         # Build concept snapshots
         current_concept_snapshot = None
-        if current_concept:
-            proof = self._proof_by_concept.get(current_concept.id)
+        if effective_concept:
+            proof = self._proof_by_concept.get(effective_concept.id)
             current_concept_snapshot = ConceptSnapshot.from_concept(
-                current_concept, proof
+                effective_concept, proof
             )
 
         proven_snapshots = self._build_proven_concept_snapshots()
-        related_concepts = self._build_related_concepts(current_concept)
+        related_concepts = self._build_related_concepts(effective_concept)
 
         # Build application snapshots
         pending_followup = self._get_pending_followup_snapshot()
-        relevant_apps = self._get_relevant_applications(current_concept)
+        relevant_apps = self._get_relevant_applications(effective_concept)
 
         # Get recent messages
         recent_messages = self._get_recent_messages(message_limit)
 
-        # Build adaptation hints
+        # Build adaptation hints (include any extra hints from builder)
         adaptation_hints = self._generate_adaptation_hints()
+        adaptation_hints.extend(self._extra_hints)
+
+        # Use builder-set session context if available
+        effective_session_context = self._session_context or self.session.context
 
         return TurnContext(
             learner=learner_snapshot,
             insights=self.full.insights,
-            mode=mode,
-            session_context=self.session.context,
+            mode=effective_mode,
+            session_context=effective_session_context,
             current_concept=current_concept_snapshot,
             outcome=outcome_snapshot,
             outcome_progress=outcome_progress,

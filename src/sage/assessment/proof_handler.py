@@ -44,6 +44,13 @@ class ProofHandler:
             demo_type = self._parse_demo_type(proof_earned.demonstration_type)
             confidence = proof_earned.confidence or calculate_confidence(demo_type, proof_earned.exchange)
 
+            # Convert structured_output.ProofExchange to graph.models.ProofExchange
+            exchange = ProofExchange(
+                prompt=proof_earned.exchange.prompt,
+                response=proof_earned.exchange.response,
+                analysis=proof_earned.exchange.analysis,
+            )
+
             proof = self.create_proof(
                 concept_id=proof_earned.concept_id,
                 learner_id=learner_id,
@@ -51,7 +58,7 @@ class ProofHandler:
                 demonstration_type=demo_type,
                 evidence=proof_earned.evidence,
                 confidence=confidence,
-                exchange=proof_earned.exchange,
+                exchange=exchange,
             )
 
             if proof:
