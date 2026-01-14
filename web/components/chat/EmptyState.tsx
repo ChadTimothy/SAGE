@@ -14,7 +14,7 @@ const suggestions = [
   "Teach me about personal finance",
 ];
 
-export function EmptyState({ onSuggestionClick }: EmptyStateProps): React.ReactElement {
+export function EmptyState({ onSuggestionClick }: EmptyStateProps): JSX.Element {
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -33,7 +33,6 @@ export function EmptyState({ onSuggestionClick }: EmptyStateProps): React.ReactE
         through conversation.
       </p>
 
-      {/* Suggestions */}
       <div className="space-y-2 w-full max-w-md">
         <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 mb-3">
           <Sparkles className="w-4 h-4" />

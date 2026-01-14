@@ -20,7 +20,7 @@ export function ChatInput({
   isListening = false,
   disabled = false,
   placeholder = "Type a message...",
-}: ChatInputProps): React.ReactElement {
+}: ChatInputProps): JSX.Element {
   const [message, setMessage] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -66,7 +66,6 @@ export function ChatInput({
       onSubmit={handleSubmit}
       className="flex items-end gap-2 p-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
     >
-      {/* Voice toggle button */}
       <button
         type="button"
         onClick={handleVoiceToggle}
@@ -80,15 +79,10 @@ export function ChatInput({
         )}
         aria-label={isListening ? "Stop recording" : "Start voice input"}
       >
-        {isListening ? (
-          <MicOff className="h-5 w-5" />
-        ) : (
-          <Mic className="h-5 w-5" />
-        )}
+        {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
       </button>
 
-      {/* Text input */}
-      <div className="flex-1 relative">
+      <div className="flex-1">
         <textarea
           ref={textareaRef}
           value={message}
@@ -109,7 +103,6 @@ export function ChatInput({
         />
       </div>
 
-      {/* Send button */}
       <button
         type="submit"
         disabled={disabled || !message.trim()}
