@@ -43,6 +43,16 @@ export function capitalize(str: string): string {
 }
 
 /**
+ * Format a dialogue mode for display (e.g., "outcome_check" -> "Outcome Check")
+ */
+export function formatDialogueMode(mode: string): string {
+  return mode
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/**
  * Truncate text with ellipsis
  */
 export function truncate(str: string, maxLength: number): string {
