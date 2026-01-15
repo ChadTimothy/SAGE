@@ -14,6 +14,11 @@ from sage.orchestration.normalizer import (
     InputNormalizer,
     NormalizedInput,
 )
+from sage.orchestration.orchestrator import (
+    OrchestratorDecision,
+    OutputStrategy,
+    SAGEOrchestrator,
+)
 
 __all__ = [
     # Normalizer
@@ -24,4 +29,8 @@ __all__ = [
     "ExtractedIntent",
     "INTENT_SCHEMAS",
     "SemanticIntentExtractor",
+    # Orchestrator
+    "OrchestratorDecision",
+    "OutputStrategy",
+    "SAGEOrchestrator",
 ]
