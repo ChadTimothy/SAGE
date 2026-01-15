@@ -15,6 +15,7 @@ export interface PracticeScenario {
 
 export interface PracticeModeContainerProps {
   isActive: boolean;
+  isLoading?: boolean;
   scenario: PracticeScenario | null;
   onEnd: () => void;
   onHint: () => void;
@@ -24,6 +25,7 @@ export interface PracticeModeContainerProps {
 
 export function PracticeModeContainer({
   isActive,
+  isLoading = false,
   scenario,
   onEnd,
   onHint,
@@ -66,12 +68,14 @@ export function PracticeModeContainer({
         <div className="flex items-center gap-2">
           <button
             onClick={onHint}
+            disabled={isLoading}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm",
               "bg-amber-200/50 dark:bg-amber-800/50",
               "text-amber-700 dark:text-amber-300",
               "hover:bg-amber-200 dark:hover:bg-amber-800",
-              "transition-colors"
+              "transition-colors",
+              isLoading && "opacity-50 cursor-not-allowed"
             )}
           >
             <Lightbulb className="w-4 h-4" />
@@ -80,12 +84,14 @@ export function PracticeModeContainer({
 
           <button
             onClick={onEnd}
+            disabled={isLoading}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm",
               "bg-slate-200/50 dark:bg-slate-700/50",
               "text-slate-700 dark:text-slate-300",
               "hover:bg-slate-200 dark:hover:bg-slate-700",
-              "transition-colors"
+              "transition-colors",
+              isLoading && "opacity-50 cursor-not-allowed"
             )}
           >
             <X className="w-4 h-4" />

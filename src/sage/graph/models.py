@@ -82,6 +82,14 @@ class DialogueMode(str, Enum):
     TEACHING = "teaching"  # Filling the gap
     VERIFICATION = "verification"  # Checking understanding
     OUTCOME_CHECK = "outcome_check"  # Can they do the thing?
+    PRACTICE = "practice"  # Roleplay practice mode
+
+
+class SessionType(str, Enum):
+    """Type of session."""
+
+    LEARNING = "learning"  # Normal learning conversation
+    PRACTICE = "practice"  # Roleplay practice session
 
 
 class ExplorationDepth(str, Enum):
@@ -263,6 +271,31 @@ class Proof(BaseModel):
 
 
 # =============================================================================
+# Practice Models
+# =============================================================================
+
+
+class PracticeScenario(BaseModel):
+    """Practice scenario configuration."""
+
+    scenario_id: str  # Unique ID for the scenario
+    title: str  # "Pricing Call", "Job Interview"
+    description: Optional[str] = None  # What this scenario practices
+    sage_role: str  # Who SAGE plays: "Potential client asking for discounts"
+    user_role: str  # Who the learner plays: "Service provider"
+    related_concepts: list[str] = Field(default_factory=list)  # Concept IDs
+
+
+class PracticeFeedback(BaseModel):
+    """LLM-generated feedback after practice."""
+
+    positives: list[str] = Field(default_factory=list)  # What went well
+    improvements: list[str] = Field(default_factory=list)  # Areas to work on
+    summary: str = ""  # Overall assessment
+    revealed_gaps: list[str] = Field(default_factory=list)  # Concepts to work on
+
+
+# =============================================================================
 # Session Models
 # =============================================================================
 
@@ -318,6 +351,10 @@ class Session(BaseModel):
     proofs_earned: list[str] = Field(default_factory=list)  # proof_ids
     connections_found: list[str] = Field(default_factory=list)  # edge_ids
     ending_state: Optional[SessionEndingState] = None
+    # Practice mode fields
+    session_type: SessionType = SessionType.LEARNING
+    practice_scenario: Optional[PracticeScenario] = None
+    practice_feedback: Optional[PracticeFeedback] = None
 
 
 # =============================================================================

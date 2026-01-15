@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { api } from "@/lib/api";
 import type { PracticeScenario, PracticeFeedbackData } from "@/components/practice";
 
 export interface PracticeMessage {
@@ -14,21 +15,25 @@ export interface UsePracticeModeOptions {
   onPracticeStart?: (scenario: PracticeScenario) => void;
   onPracticeEnd?: (feedback: PracticeFeedbackData) => void;
   onHintRequest?: () => void;
+  learnerId?: string;
 }
 
 export interface UsePracticeModeReturn {
   isActive: boolean;
+  isLoading: boolean;
   scenario: PracticeScenario | null;
+  sessionId: string | null;
   messages: PracticeMessage[];
   showSetup: boolean;
   showFeedback: boolean;
   feedback: PracticeFeedbackData | null;
+  error: string | null;
   openSetup: () => void;
   closeSetup: () => void;
-  startPractice: (scenario: PracticeScenario) => void;
-  endPractice: () => void;
-  requestHint: () => void;
-  addMessage: (role: PracticeMessage["role"], content: string) => void;
+  startPractice: (scenario: PracticeScenario) => Promise<void>;
+  endPractice: () => Promise<void>;
+  requestHint: () => Promise<void>;
+  sendMessage: (content: string) => Promise<void>;
   closeFeedback: () => void;
   practiceAgain: () => void;
 }
@@ -37,16 +42,21 @@ export function usePracticeMode({
   onPracticeStart,
   onPracticeEnd,
   onHintRequest,
+  learnerId,
 }: UsePracticeModeOptions = {}): UsePracticeModeReturn {
   const [isActive, setIsActive] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [scenario, setScenario] = useState<PracticeScenario | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<PracticeMessage[]>([]);
   const [showSetup, setShowSetup] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedback, setFeedback] = useState<PracticeFeedbackData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const openSetup = useCallback(() => {
     setShowSetup(true);
+    setError(null);
   }, []);
 
   const closeSetup = useCallback(() => {
@@ -54,72 +64,138 @@ export function usePracticeMode({
   }, []);
 
   const startPractice = useCallback(
-    (newScenario: PracticeScenario) => {
-      setScenario(newScenario);
-      setIsActive(true);
-      setShowSetup(false);
-      setMessages([]);
-      setFeedback(null);
-      onPracticeStart?.(newScenario);
+    async (newScenario: PracticeScenario) => {
+      setIsLoading(true);
+      setError(null);
 
-      // Add initial character message
-      const initialMessage: PracticeMessage = {
-        id: `practice-${Date.now()}`,
-        role: "sage-character",
-        content: getInitialMessage(newScenario),
-        timestamp: new Date().toISOString(),
-      };
-      setMessages([initialMessage]);
+      try {
+        // Call backend to start practice session
+        const response = await api.startPractice({
+          scenario_id: newScenario.id,
+          title: newScenario.title,
+          sage_role: newScenario.sageRole,
+          user_role: newScenario.userRole,
+          description: newScenario.description,
+          learner_id: learnerId,
+        });
+
+        setScenario(newScenario);
+        setSessionId(response.session_id);
+        setIsActive(true);
+        setShowSetup(false);
+        setFeedback(null);
+
+        // Add initial character message
+        const initialMessage: PracticeMessage = {
+          id: `practice-${Date.now()}`,
+          role: "sage-character",
+          content: response.initial_message,
+          timestamp: new Date().toISOString(),
+        };
+        setMessages([initialMessage]);
+
+        onPracticeStart?.(newScenario);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to start practice");
+      } finally {
+        setIsLoading(false);
+      }
     },
-    [onPracticeStart]
+    [learnerId, onPracticeStart]
   );
 
-  const endPractice = useCallback(() => {
-    if (!scenario) return;
+  const sendMessage = useCallback(
+    async (content: string) => {
+      if (!isActive || !sessionId) return;
 
-    // Generate feedback based on practice messages
-    const generatedFeedback: PracticeFeedbackData = {
-      scenario,
-      positives: generatePositives(messages),
-      improvements: generateImprovements(messages),
-      summary: generateSummary(scenario, messages),
-    };
+      setIsLoading(true);
+      setError(null);
 
-    setFeedback(generatedFeedback);
-    setIsActive(false);
-    setShowFeedback(true);
-    onPracticeEnd?.(generatedFeedback);
-  }, [scenario, messages, onPracticeEnd]);
-
-  const requestHint = useCallback(() => {
-    if (!isActive) return;
-
-    const hintMessage: PracticeMessage = {
-      id: `hint-${Date.now()}`,
-      role: "sage-hint",
-      content: getHintForScenario(scenario),
-      timestamp: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, hintMessage]);
-    onHintRequest?.();
-  }, [isActive, scenario, onHintRequest]);
-
-  const addMessage = useCallback(
-    (role: PracticeMessage["role"], content: string) => {
-      const message: PracticeMessage = {
-        id: `msg-${Date.now()}`,
-        role,
+      // Add user message immediately
+      const userMessage: PracticeMessage = {
+        id: `user-${Date.now()}`,
+        role: "user",
         content,
         timestamp: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, message]);
+      setMessages((prev) => [...prev, userMessage]);
+
+      try {
+        // Get character response from backend
+        const response = await api.sendPracticeMessage(sessionId, content);
+
+        const characterMessage: PracticeMessage = {
+          id: `character-${Date.now()}`,
+          role: "sage-character",
+          content: response.message,
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, characterMessage]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to send message");
+      } finally {
+        setIsLoading(false);
+      }
     },
-    []
+    [isActive, sessionId]
   );
+
+  const endPractice = useCallback(async () => {
+    if (!scenario || !sessionId) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Get feedback from backend
+      const response = await api.endPractice(sessionId);
+
+      const generatedFeedback: PracticeFeedbackData = {
+        scenario,
+        positives: response.positives,
+        improvements: response.improvements,
+        summary: response.summary,
+      };
+
+      setFeedback(generatedFeedback);
+      setIsActive(false);
+      setShowFeedback(true);
+      onPracticeEnd?.(generatedFeedback);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to end practice");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [scenario, sessionId, onPracticeEnd]);
+
+  const requestHint = useCallback(async () => {
+    if (!isActive || !sessionId) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await api.getPracticeHint(sessionId);
+
+      const hintMessage: PracticeMessage = {
+        id: `hint-${Date.now()}`,
+        role: "sage-hint",
+        content: response.hint,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, hintMessage]);
+      onHintRequest?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to get hint");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isActive, sessionId, onHintRequest]);
 
   const closeFeedback = useCallback(() => {
     setShowFeedback(false);
     setScenario(null);
+    setSessionId(null);
     setMessages([]);
   }, []);
 
@@ -132,160 +208,21 @@ export function usePracticeMode({
 
   return {
     isActive,
+    isLoading,
     scenario,
+    sessionId,
     messages,
     showSetup,
     showFeedback,
     feedback,
+    error,
     openSetup,
     closeSetup,
     startPractice,
     endPractice,
     requestHint,
-    addMessage,
+    sendMessage,
     closeFeedback,
     practiceAgain,
   };
-}
-
-// Helper functions for generating practice content
-function getInitialMessage(scenario: PracticeScenario): string {
-  const messages: Record<string, string> = {
-    "pricing-call":
-      "Hi! I've looked at your portfolio and I really like your work. I'm interested in hiring you for a project, but I need to discuss the budget. What are your rates?",
-    negotiation:
-      "Thanks for meeting with me today. I've reviewed the proposal and while I see the value, I think we need to discuss some of the terms before moving forward.",
-    presentation:
-      "Thank you for that presentation. I have a few questions. Can you explain how this solution would scale as our company grows?",
-    interview:
-      "Thanks for coming in today. Before we dive into your experience, tell me a bit about yourself and why you're interested in this role.",
-  };
-  return (
-    messages[scenario.id] ||
-    `Hello! I'm playing the role of ${scenario.sageRole}. Let's begin our practice session.`
-  );
-}
-
-function getHintForScenario(scenario: PracticeScenario | null): string {
-  if (!scenario) return "Take a moment to think about your response.";
-
-  const hints: Record<string, string[]> = {
-    "pricing-call": [
-      "Remember to focus on value, not just cost.",
-      "Ask questions to understand their needs before discussing price.",
-      "Don't be afraid to anchor high—you can always negotiate down.",
-    ],
-    negotiation: [
-      "Look for win-win solutions rather than zero-sum outcomes.",
-      "Ask clarifying questions before making concessions.",
-      "Consider what you can offer that costs you little but has value to them.",
-    ],
-    presentation: [
-      "Answer the question directly, then provide supporting details.",
-      "It's okay to say 'That's a great question' to buy thinking time.",
-      "Use specific examples or data to support your points.",
-    ],
-    interview: [
-      "Use the STAR method: Situation, Task, Action, Result.",
-      "Connect your experience to what they need.",
-      "Show enthusiasm without overselling.",
-    ],
-  };
-
-  const scenarioHints = hints[scenario.id] || [
-    "Take your time and think through your response.",
-  ];
-  return scenarioHints[Math.floor(Math.random() * scenarioHints.length)];
-}
-
-// TODO: Replace with backend Assessment module for capability-based evaluation.
-// The Assessment module (M5) can analyze actual skill demonstration through
-// proofs and verification. This MVP uses pattern-matching as a placeholder.
-function generatePositives(messages: PracticeMessage[]): string[] {
-  const userMessages = messages.filter((m) => m.role === "user");
-  if (userMessages.length === 0) return ["You took the first step by starting practice!"];
-
-  // Analyze for demonstrated communication skills (capability indicators)
-  const positives: string[] = [];
-  const allContent = userMessages.map((m) => m.content.toLowerCase()).join(" ");
-
-  // Value articulation - key skill in pricing/negotiation
-  if (allContent.includes("value") || allContent.includes("benefit") || allContent.includes("roi") || allContent.includes("worth")) {
-    positives.push("You articulated value effectively—a key persuasion skill");
-  }
-  // Active listening - asking clarifying questions
-  if ((allContent.match(/\?/g) || []).length >= 2) {
-    positives.push("You demonstrated active listening by asking clarifying questions");
-  }
-  // Confidence indicators - assertive language
-  if (allContent.includes("i can") || allContent.includes("i will") || allContent.includes("i believe")) {
-    positives.push("You communicated with confidence and conviction");
-  }
-  // Empathy/rapport - acknowledging the other party
-  if (allContent.includes("understand") || allContent.includes("appreciate") || allContent.includes("i see")) {
-    positives.push("You showed empathy by acknowledging their perspective");
-  }
-  // Solution-oriented - proposing alternatives
-  if (allContent.includes("what if") || allContent.includes("how about") || allContent.includes("alternatively")) {
-    positives.push("You proposed solutions rather than just responding");
-  }
-
-  return positives.length > 0
-    ? positives
-    : ["You practiced the scenario—repetition builds skill"];
-}
-
-function generateImprovements(messages: PracticeMessage[]): string[] {
-  const userMessages = messages.filter((m) => m.role === "user");
-  if (userMessages.length === 0)
-    return ["Jump in and respond—practice builds confidence"];
-
-  // Analyze for skill gaps (capability-focused suggestions)
-  const improvements: string[] = [];
-  const allContent = userMessages.map((m) => m.content.toLowerCase()).join(" ");
-
-  // Missing discovery questions
-  if (!(allContent.match(/\?/g) || []).length) {
-    improvements.push("Ask discovery questions to understand their real needs");
-  }
-  // Missing value framing
-  if (!allContent.includes("value") && !allContent.includes("benefit") && !allContent.includes("help")) {
-    improvements.push("Frame your points in terms of value to the other party");
-  }
-  // Defensive or apologetic language
-  if (allContent.includes("sorry") || allContent.includes("just") || allContent.includes("maybe")) {
-    improvements.push("Reduce hedging language—speak with more conviction");
-  }
-  // Missing acknowledgment
-  if (!allContent.includes("understand") && !allContent.includes("hear") && !allContent.includes("appreciate")) {
-    improvements.push("Acknowledge their position before presenting yours");
-  }
-
-  return improvements;
-}
-
-function generateSummary(
-  scenario: PracticeScenario,
-  messages: PracticeMessage[]
-): string {
-  const userMessages = messages.filter((m) => m.role === "user");
-  const allContent = userMessages.map((m) => m.content.toLowerCase()).join(" ");
-
-  if (userMessages.length === 0) {
-    return `Ready to practice ${scenario.title.toLowerCase()}? Skill comes from doing, not just knowing.`;
-  }
-
-  // Assess overall capability demonstration
-  const hasQuestions = (allContent.match(/\?/g) || []).length > 0;
-  const hasValueLanguage = /value|benefit|roi|worth|help/.test(allContent);
-  const hasConfidence = /i can|i will|i believe|we can/.test(allContent);
-  const skillsShown = [hasQuestions, hasValueLanguage, hasConfidence].filter(Boolean).length;
-
-  if (skillsShown >= 2) {
-    return `Strong practice session! You demonstrated key ${scenario.title.toLowerCase()} skills. Keep practicing to make them automatic.`;
-  }
-  if (skillsShown === 1) {
-    return `Good foundation in ${scenario.title.toLowerCase()}. Focus on integrating more techniques in your next practice.`;
-  }
-  return `You've started building ${scenario.title.toLowerCase()} skills. Each practice session makes the next one easier.`;
 }

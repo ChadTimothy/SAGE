@@ -137,14 +137,7 @@ export default function ChatPage(): JSX.Element {
   // Practice mode handlers
   const handlePracticeSend = useCallback(
     (content: string) => {
-      practice.addMessage("user", content);
-      // Simulate character response after a short delay
-      setTimeout(() => {
-        practice.addMessage(
-          "sage-character",
-          generatePracticeResponse(practice.scenario?.id || "", content)
-        );
-      }, 1000);
+      practice.sendMessage(content);
     },
     [practice]
   );
@@ -331,43 +324,3 @@ function getPlaceholderText(isPracticeActive: boolean, isConnected: boolean): st
   return "Connecting to SAGE...";
 }
 
-// TODO: Replace with backend integration using ConversationEngine in practice mode.
-// The backend Assessment and Dialogue modules (M3-M6) can provide intelligent,
-// adaptive responses based on the learner's actual performance. This MVP uses
-// client-side mock responses for initial testing.
-function generatePracticeResponse(scenarioId: string, _userMessage: string): string {
-  const responses: Record<string, string[]> = {
-    "pricing-call": [
-      "I appreciate you explaining that, but our budget is really tight. Can you work with $1,500?",
-      "I see the value, but I've gotten lower quotes from other providers. What makes you different?",
-      "That's more than I expected. What if we reduce the scope a bit?",
-      "I need to think about it. Can you send me a detailed breakdown?",
-    ],
-    negotiation: [
-      "I understand your position, but we need something that works for both of us.",
-      "That's an interesting point. Let me counter with this alternative...",
-      "I'm not sure that works for us. What else can you offer?",
-      "We're getting closer, but I need a bit more flexibility on your end.",
-    ],
-    presentation: [
-      "That makes sense. But how does this compare to what competitors are offering?",
-      "Interesting. What's the timeline for seeing results?",
-      "I'm concerned about the implementation complexity. Can you address that?",
-      "What happens if this doesn't work as expected?",
-    ],
-    interview: [
-      "Tell me about a time when you had to deal with a difficult situation at work.",
-      "What would you say is your biggest weakness?",
-      "Where do you see yourself in five years?",
-      "Why should we hire you over other candidates?",
-    ],
-  };
-
-  const scenarioResponses = responses[scenarioId] || [
-    "That's an interesting point. Tell me more about your thinking.",
-    "I see. How would you handle this differently?",
-    "Okay, but what if the situation changed?",
-  ];
-
-  return scenarioResponses[Math.floor(Math.random() * scenarioResponses.length)];
-}
