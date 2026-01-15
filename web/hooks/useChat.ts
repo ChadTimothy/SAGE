@@ -2,26 +2,32 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { createChatConnection, type ChatWebSocket } from "@/lib/websocket";
-import type { ChatMessage, WSMessage } from "@/types";
+import type { ChatMessage, DialogueMode, WSCompleteMessage } from "@/types";
 
 interface UseChatOptions {
   sessionId: string;
   onMessage?: (message: ChatMessage) => void;
+  onError?: (error: string) => void;
 }
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
-export function useChat({ sessionId, onMessage }: UseChatOptions) {
+export function useChat({ sessionId, onMessage, onError }: UseChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [isTyping, setIsTyping] = useState(false);
   const wsRef = useRef<ChatWebSocket | null>(null);
   const onMessageRef = useRef(onMessage);
+  const onErrorRef = useRef(onError);
 
-  // Keep onMessage ref in sync
+  // Keep refs in sync
   useEffect(() => {
     onMessageRef.current = onMessage;
   }, [onMessage]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   // Connect to WebSocket
   useEffect(() => {
@@ -30,18 +36,33 @@ export function useChat({ sessionId, onMessage }: UseChatOptions) {
     const ws = createChatConnection(sessionId);
     wsRef.current = ws;
 
-    // Handle incoming messages
-    const unsubMessage = ws.onMessage((wsMessage: WSMessage) => {
+    // Handle complete messages (full SAGE responses)
+    const unsubComplete = ws.onComplete((wsMessage: WSCompleteMessage) => {
+      const response = wsMessage.response;
+
       const chatMessage: ChatMessage = {
-        role: wsMessage.type === "user" ? "user" : "assistant",
-        content: wsMessage.content,
-        timestamp: wsMessage.timestamp || new Date().toISOString(),
-        mode: wsMessage.mode,
+        role: "assistant",
+        content: response.message,
+        timestamp: new Date().toISOString(),
+        mode: response.mode as DialogueMode,
       };
 
       setMessages((prev) => [...prev, chatMessage]);
       setIsTyping(false);
       onMessageRef.current?.(chatMessage);
+    });
+
+    // Handle streaming chunks (for typing indicator)
+    const unsubChunk = ws.onChunk(() => {
+      // Each chunk confirms SAGE is still responding
+      setIsTyping(true);
+    });
+
+    // Handle errors
+    const unsubError = ws.onError((errorMessage: string) => {
+      console.error("Chat error:", errorMessage);
+      setIsTyping(false);
+      onErrorRef.current?.(errorMessage);
     });
 
     // Handle status changes
@@ -54,7 +75,9 @@ export function useChat({ sessionId, onMessage }: UseChatOptions) {
 
     // Cleanup
     return () => {
-      unsubMessage();
+      unsubComplete();
+      unsubChunk();
+      unsubError();
       unsubStatus();
       ws.disconnect();
     };

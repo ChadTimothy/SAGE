@@ -73,7 +73,7 @@ def _response_to_dict(response) -> dict:
 
     return {
         "message": response.message,
-        "mode": response.mode.value,
+        "mode": response.current_mode.value,
         "transition_to": response.transition_to.value if response.transition_to else None,
         "transition_reason": response.transition_reason,
         "gap_identified": {
@@ -97,12 +97,21 @@ async def websocket_chat(
 ) -> None:
     """WebSocket endpoint for streaming chat."""
     settings = get_settings()
-    graph = LearningGraph(settings.database_url)
+    graph = LearningGraph(settings.db_path)
 
     session = graph.get_session(session_id)
     if not session:
-        await websocket.close(code=4004, reason="Session not found")
-        return
+        # Auto-create session for development/testing
+        # TODO: Remove this once frontend properly creates sessions (Issue #61)
+        from sage.graph.models import Session
+
+        # Get or create default learner
+        learner = graph.get_or_create_learner()
+
+        # Create session with the provided ID
+        session = Session(id=session_id, learner_id=learner.id)
+        session = graph.create_session(session)
+        logger.info(f"Auto-created session {session_id} for learner {learner.id}")
 
     await manager.connect(session_id, websocket)
     logger.info(f"WebSocket connected for session {session_id}")

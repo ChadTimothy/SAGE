@@ -2,9 +2,11 @@
  * SAGE WebSocket Client for streaming chat
  */
 
-import type { WSMessage } from "@/types";
+import type { WSMessage, WSCompleteMessage } from "@/types";
 
-type MessageHandler = (message: WSMessage) => void;
+type CompleteHandler = (message: WSCompleteMessage) => void;
+type ChunkHandler = (content: string) => void;
+type ErrorHandler = (message: string) => void;
 type StatusHandler = (status: "connecting" | "connected" | "disconnected" | "error") => void;
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
@@ -12,7 +14,9 @@ const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
 export class ChatWebSocket {
   private ws: WebSocket | null = null;
   private sessionId: string;
-  private messageHandlers: Set<MessageHandler> = new Set();
+  private completeHandlers: Set<CompleteHandler> = new Set();
+  private chunkHandlers: Set<ChunkHandler> = new Set();
+  private errorHandlers: Set<ErrorHandler> = new Set();
   private statusHandlers: Set<StatusHandler> = new Set();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
@@ -51,13 +55,28 @@ export class ChatWebSocket {
     this.ws.onmessage = (event) => {
       try {
         const message: WSMessage = JSON.parse(event.data);
-        this.notifyMessage(message);
+
+        switch (message.type) {
+          case "chunk":
+            // Notify chunk handlers for streaming indicator
+            this.chunkHandlers.forEach((handler) => handler(message.content));
+            break;
+
+          case "complete":
+            // Notify complete handlers with the full response
+            this.completeHandlers.forEach((handler) => handler(message));
+            break;
+
+          case "error":
+            // Notify error handlers
+            this.errorHandlers.forEach((handler) => handler(message.message));
+            break;
+
+          default:
+            console.warn("Unknown message type:", message);
+        }
       } catch {
-        // Handle plain text messages
-        this.notifyMessage({
-          type: "assistant",
-          content: event.data,
-        });
+        console.error("Failed to parse WebSocket message:", event.data);
       }
     };
 
@@ -106,18 +125,28 @@ export class ChatWebSocket {
     this.ws = null;
   }
 
-  onMessage(handler: MessageHandler): () => void {
-    this.messageHandlers.add(handler);
-    return () => this.messageHandlers.delete(handler);
+  /** Subscribe to complete messages (full SAGE responses) */
+  onComplete(handler: CompleteHandler): () => void {
+    this.completeHandlers.add(handler);
+    return () => this.completeHandlers.delete(handler);
   }
 
+  /** Subscribe to streaming chunks (for typing indicator) */
+  onChunk(handler: ChunkHandler): () => void {
+    this.chunkHandlers.add(handler);
+    return () => this.chunkHandlers.delete(handler);
+  }
+
+  /** Subscribe to error messages */
+  onError(handler: ErrorHandler): () => void {
+    this.errorHandlers.add(handler);
+    return () => this.errorHandlers.delete(handler);
+  }
+
+  /** Subscribe to connection status changes */
   onStatus(handler: StatusHandler): () => void {
     this.statusHandlers.add(handler);
     return () => this.statusHandlers.delete(handler);
-  }
-
-  private notifyMessage(message: WSMessage): void {
-    this.messageHandlers.forEach((handler) => handler(message));
   }
 
   private notifyStatus(status: "connecting" | "connected" | "disconnected" | "error"): void {
