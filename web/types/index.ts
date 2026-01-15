@@ -122,12 +122,40 @@ export interface LearnerState {
 }
 
 // WebSocket message types
-export interface WSMessage {
-  type: "user" | "assistant" | "error" | "status";
+export type WSMessageType = "chunk" | "complete" | "error";
+
+export interface WSChunkMessage {
+  type: "chunk";
   content: string;
-  mode?: DialogueMode;
-  timestamp?: string;
 }
+
+export interface WSCompleteMessage {
+  type: "complete";
+  response: {
+    message: string;
+    mode: string;
+    transition_to: string | null;
+    transition_reason: string | null;
+    gap_identified: {
+      name: string;
+      display_name: string;
+      description: string;
+    } | null;
+    proof_earned: {
+      concept_id: string;
+      demonstration_type: string;
+      evidence: string;
+    } | null;
+    outcome_achieved: boolean;
+  };
+}
+
+export interface WSErrorMessage {
+  type: "error";
+  message: string;
+}
+
+export type WSMessage = WSChunkMessage | WSCompleteMessage | WSErrorMessage;
 
 // Session context types (Set/Setting/Intention)
 export interface SessionContext {
