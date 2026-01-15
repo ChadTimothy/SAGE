@@ -39,12 +39,16 @@ from sage.dialogue.state_detection import (
 from sage.dialogue.structured_output import (
     ApplicationDetected,
     ConnectionDiscovered,
+    ExtendedSAGEResponse,
     FollowupResponse,
     GapIdentified,
+    PendingDataRequest,
     ProofEarned,
     ProofExchange,
     SAGEResponse,
     StateChange,
+    UITreeNode,
+    VoiceHints,
     create_fallback_response,
     get_valid_transitions,
     parse_sage_response,
@@ -218,6 +222,316 @@ class TestSAGEResponse:
         )
         assert response.state_change_detected is not None
         assert response.state_change_detected.what_changed == "energy_drop"
+
+
+# =============================================================================
+# Voice/UI Parity Model Tests
+# =============================================================================
+
+
+class TestUITreeNode:
+    """Tests for UITreeNode model (composable UI trees)."""
+
+    def test_simple_node(self):
+        """Test creating a simple UI node without children."""
+        node = UITreeNode(
+            component="Text",
+            props={"content": "Hello, world!"},
+        )
+        assert node.component == "Text"
+        assert node.props["content"] == "Hello, world!"
+        assert node.children is None
+
+    def test_node_with_children(self):
+        """Test creating a node with nested children."""
+        node = UITreeNode(
+            component="Stack",
+            props={"gap": 4, "direction": "vertical"},
+            children=[
+                UITreeNode(component="Text", props={"content": "Title"}),
+                UITreeNode(component="Button", props={"label": "Click me"}),
+            ],
+        )
+        assert node.component == "Stack"
+        assert len(node.children) == 2
+        assert node.children[0].component == "Text"
+        assert node.children[1].component == "Button"
+
+    def test_deeply_nested_tree(self):
+        """Test a complex deeply nested UI tree."""
+        tree = UITreeNode(
+            component="Card",
+            props={"title": "Check-In"},
+            children=[
+                UITreeNode(
+                    component="Stack",
+                    props={"gap": 6},
+                    children=[
+                        UITreeNode(
+                            component="RadioGroup",
+                            props={"name": "timeAvailable", "label": "Time"},
+                            children=[
+                                UITreeNode(component="Radio", props={"value": "quick", "label": "Quick"}),
+                                UITreeNode(component="Radio", props={"value": "focused", "label": "Focused"}),
+                                UITreeNode(component="Radio", props={"value": "deep", "label": "Deep"}),
+                            ],
+                        ),
+                        UITreeNode(
+                            component="Slider",
+                            props={"name": "energy", "min": 0, "max": 100},
+                        ),
+                    ],
+                ),
+            ],
+        )
+        assert tree.component == "Card"
+        assert len(tree.children) == 1
+        stack = tree.children[0]
+        assert stack.component == "Stack"
+        assert len(stack.children) == 2
+        radio_group = stack.children[0]
+        assert radio_group.component == "RadioGroup"
+        assert len(radio_group.children) == 3
+
+    def test_serialization_roundtrip(self):
+        """Test that UITreeNode serializes and deserializes correctly."""
+        original = UITreeNode(
+            component="Stack",
+            props={"gap": 4},
+            children=[
+                UITreeNode(component="Text", props={"content": "Hello"}),
+            ],
+        )
+        json_str = original.model_dump_json()
+        restored = UITreeNode.model_validate_json(json_str)
+        assert restored.component == original.component
+        assert restored.props == original.props
+        assert len(restored.children) == 1
+
+    def test_default_props(self):
+        """Test that props default to empty dict."""
+        node = UITreeNode(component="Divider")
+        assert node.props == {}
+        assert node.children is None
+
+
+class TestVoiceHints:
+    """Tests for VoiceHints model (TTS optimization)."""
+
+    def test_minimal_voice_hints(self):
+        """Test voice hints with defaults."""
+        hints = VoiceHints()
+        assert hints.voice_fallback is None
+        assert hints.emphasis == []
+        assert hints.pause_after == []
+        assert hints.tone == "neutral"
+        assert hints.slower is False
+
+    def test_full_voice_hints(self):
+        """Test voice hints with all fields."""
+        hints = VoiceHints(
+            voice_fallback="How much time do you have today?",
+            emphasis=["time", "energy"],
+            pause_after=["today", "mindset"],
+            tone="warm",
+            slower=True,
+        )
+        assert hints.voice_fallback == "How much time do you have today?"
+        assert "time" in hints.emphasis
+        assert hints.tone == "warm"
+        assert hints.slower is True
+
+    def test_serialization(self):
+        """Test voice hints serialization."""
+        hints = VoiceHints(voice_fallback="Test", tone="excited")
+        data = hints.model_dump()
+        assert data["voice_fallback"] == "Test"
+        assert data["tone"] == "excited"
+
+
+class TestPendingDataRequest:
+    """Tests for PendingDataRequest model (multi-turn data collection)."""
+
+    def test_empty_pending_request(self):
+        """Test pending request with just intent."""
+        pending = PendingDataRequest(intent="session_check_in")
+        assert pending.intent == "session_check_in"
+        assert pending.collected_data == {}
+        assert pending.missing_fields == []
+        assert pending.validation_errors == []
+
+    def test_partial_data_collected(self):
+        """Test pending request with partial data."""
+        pending = PendingDataRequest(
+            intent="session_check_in",
+            collected_data={"timeAvailable": "focused", "energyLevel": 50},
+            missing_fields=["mindset"],
+        )
+        assert pending.collected_data["timeAvailable"] == "focused"
+        assert "mindset" in pending.missing_fields
+
+    def test_with_validation_errors(self):
+        """Test pending request with validation errors."""
+        pending = PendingDataRequest(
+            intent="practice_setup",
+            collected_data={"scenario": ""},
+            validation_errors=["Scenario description cannot be empty"],
+        )
+        assert len(pending.validation_errors) == 1
+        assert "empty" in pending.validation_errors[0]
+
+
+class TestExtendedSAGEResponse:
+    """Tests for ExtendedSAGEResponse model (voice/UI parity)."""
+
+    def test_extends_base_response(self):
+        """Test that ExtendedSAGEResponse includes all SAGEResponse fields."""
+        response = ExtendedSAGEResponse(
+            message="How are you showing up today?",
+            current_mode=DialogueMode.CHECK_IN,
+        )
+        # Base SAGEResponse fields should work
+        assert response.message == "How are you showing up today?"
+        assert response.current_mode == DialogueMode.CHECK_IN
+        assert response.transition_to is None
+        # Extended fields should have defaults
+        assert response.ui_tree is None
+        assert response.voice_hints is None
+        assert response.pending_data_request is None
+
+    def test_response_with_ui_tree(self):
+        """Test response with ad-hoc generated UI tree."""
+        ui_tree = UITreeNode(
+            component="Stack",
+            props={"gap": 4},
+            children=[
+                UITreeNode(component="Text", props={"content": "Quick Check-In"}),
+                UITreeNode(
+                    component="Slider",
+                    props={"name": "energy", "label": "Energy Level"},
+                ),
+                UITreeNode(component="Button", props={"label": "Start", "action": "submit"}),
+            ],
+        )
+        response = ExtendedSAGEResponse(
+            message="Let's get started.",
+            current_mode=DialogueMode.CHECK_IN,
+            ui_tree=ui_tree,
+            ui_purpose="Collect session context",
+            estimated_interaction_time=30,
+        )
+        assert response.ui_tree is not None
+        assert response.ui_tree.component == "Stack"
+        assert len(response.ui_tree.children) == 3
+        assert response.ui_purpose == "Collect session context"
+        assert response.estimated_interaction_time == 30
+
+    def test_response_with_voice_hints(self):
+        """Test response with voice optimization hints."""
+        hints = VoiceHints(
+            voice_fallback="How are you showing up today? How much time do you have?",
+            tone="warm",
+            emphasis=["time", "energy"],
+        )
+        response = ExtendedSAGEResponse(
+            message="Let's check in.",
+            current_mode=DialogueMode.CHECK_IN,
+            voice_hints=hints,
+        )
+        assert response.voice_hints is not None
+        assert "How are you showing up" in response.voice_hints.voice_fallback
+        assert response.voice_hints.tone == "warm"
+
+    def test_response_with_pending_data(self):
+        """Test response with pending data collection state."""
+        pending = PendingDataRequest(
+            intent="session_check_in",
+            collected_data={"timeAvailable": "focused"},
+            missing_fields=["energyLevel", "mindset"],
+        )
+        response = ExtendedSAGEResponse(
+            message="Got it, focused session. How's your energy?",
+            current_mode=DialogueMode.CHECK_IN,
+            pending_data_request=pending,
+        )
+        assert response.pending_data_request is not None
+        assert response.pending_data_request.intent == "session_check_in"
+        assert "energyLevel" in response.pending_data_request.missing_fields
+
+    def test_full_extended_response(self):
+        """Test response with all extended fields populated."""
+        ui_tree = UITreeNode(
+            component="Card",
+            props={"title": "Check-In"},
+            children=[
+                UITreeNode(
+                    component="RadioGroup",
+                    props={"name": "time"},
+                    children=[
+                        UITreeNode(component="Radio", props={"value": "quick", "label": "Quick"}),
+                    ],
+                ),
+            ],
+        )
+        hints = VoiceHints(voice_fallback="How much time?", tone="warm")
+        pending = PendingDataRequest(
+            intent="session_check_in",
+            collected_data={"energy": 70},
+            missing_fields=["time"],
+        )
+
+        response = ExtendedSAGEResponse(
+            message="Almost there! Just need to know how much time you have.",
+            current_mode=DialogueMode.CHECK_IN,
+            ui_tree=ui_tree,
+            voice_hints=hints,
+            pending_data_request=pending,
+            ui_purpose="Complete check-in",
+            estimated_interaction_time=15,
+        )
+
+        # Verify all fields
+        assert response.ui_tree.component == "Card"
+        assert response.voice_hints.tone == "warm"
+        assert response.pending_data_request.collected_data["energy"] == 70
+        assert response.ui_purpose == "Complete check-in"
+        assert response.estimated_interaction_time == 15
+
+    def test_serialization_with_all_fields(self):
+        """Test that full response serializes correctly."""
+        response = ExtendedSAGEResponse(
+            message="Test",
+            current_mode=DialogueMode.CHECK_IN,
+            ui_tree=UITreeNode(component="Stack", children=[]),
+            voice_hints=VoiceHints(voice_fallback="Test voice"),
+            pending_data_request=PendingDataRequest(intent="test"),
+        )
+        data = response.model_dump()
+        assert "ui_tree" in data
+        assert "voice_hints" in data
+        assert "pending_data_request" in data
+        assert data["ui_tree"]["component"] == "Stack"
+
+    def test_inherits_base_functionality(self):
+        """Test that base SAGEResponse features still work."""
+        gap = GapIdentified(
+            name="test-gap",
+            display_name="Test Gap",
+            description="A test gap",
+        )
+        response = ExtendedSAGEResponse(
+            message="Found a gap",
+            current_mode=DialogueMode.PROBING,
+            gap_identified=gap,
+            transition_to=DialogueMode.TEACHING,
+            # Extended fields
+            ui_tree=UITreeNode(component="Text", props={"content": "Gap found"}),
+        )
+        # Base functionality
+        assert response.gap_identified.name == "test-gap"
+        assert response.transition_to == DialogueMode.TEACHING
+        # Extended functionality
+        assert response.ui_tree is not None
 
 
 class TestResponseParsing:

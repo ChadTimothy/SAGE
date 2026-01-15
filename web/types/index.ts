@@ -121,7 +121,58 @@ export interface LearnerState {
   }>;
 }
 
-// WebSocket message types
+// =============================================================================
+// Voice/UI Parity Types (Ad-hoc UI Generation)
+// =============================================================================
+
+/**
+ * A node in the composable UI component tree.
+ * Rendered recursively by the frontend using primitive components.
+ */
+export interface UITreeNode {
+  /** Primitive component name (Stack, Text, Button, RadioGroup, etc.) */
+  component: string;
+  /** Component properties */
+  props: Record<string, unknown>;
+  /** Child nodes for container components */
+  children?: UITreeNode[];
+}
+
+/**
+ * Hints for text-to-speech optimization.
+ */
+export interface VoiceHints {
+  /** Full voice alternative for UI-based content */
+  voice_fallback?: string;
+  /** Words to emphasize in speech */
+  emphasis?: string[];
+  /** Words after which to pause */
+  pause_after?: string[];
+  /** Suggested emotional tone */
+  tone?: string;
+  /** Request slower speech rate */
+  slower?: boolean;
+}
+
+/**
+ * Tracks incomplete data collection across conversation turns.
+ * Enables multi-turn data collection and cross-modality state sync.
+ */
+export interface PendingDataRequest {
+  /** What we're trying to collect (e.g., 'session_check_in') */
+  intent: string;
+  /** Data collected so far */
+  collected_data: Record<string, unknown>;
+  /** Fields still needed */
+  missing_fields: string[];
+  /** Validation errors to show user */
+  validation_errors: string[];
+}
+
+// =============================================================================
+// WebSocket Message Types
+// =============================================================================
+
 export type WSMessageType = "chunk" | "complete" | "error";
 
 export interface WSChunkMessage {
@@ -147,6 +198,13 @@ export interface WSCompleteMessage {
       evidence: string;
     } | null;
     outcome_achieved: boolean;
+
+    // Voice/UI Parity fields (ad-hoc UI generation)
+    ui_tree: UITreeNode | null;
+    voice_hints: VoiceHints | null;
+    pending_data_request: PendingDataRequest | null;
+    ui_purpose: string | null;
+    estimated_interaction_time: number | null;
   };
 }
 
