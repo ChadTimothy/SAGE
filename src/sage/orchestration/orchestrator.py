@@ -176,7 +176,7 @@ class SAGEOrchestrator:
 
         # Step 4: Execute action
         if decision.action == "request_more":
-            return self._create_data_request_response(decision, normalized)
+            return await self._create_data_request_response(decision, normalized)
 
         # Step 5: Process through conversation engine
         return await self._process_with_engine(
@@ -264,26 +264,66 @@ class SAGEOrchestrator:
         key = (intent, source_modality)
         return _OUTPUT_STRATEGY_MAP.get(key, _DEFAULT_OUTPUT_STRATEGY)
 
-    def _create_data_request_response(
+    async def _create_data_request_response(
         self,
         decision: OrchestratorDecision,
         normalized: NormalizedInput,
     ) -> ExtendedSAGEResponse:
-        """Create a response requesting more data from the user."""
-        message = _build_missing_fields_message(normalized.missing_fields)
+        """Create a response requesting more data from the user.
 
-        if normalized.validation_errors:
-            errors = "; ".join(normalized.validation_errors)
-            message = f"{errors}. {message}"
-
+        For form modality: Returns structured validation messages
+        For voice/chat: Generates conversational follow-up using LLM
+        """
         is_check_in = normalized.intent == "session_check_in"
         current_mode = DialogueMode.CHECK_IN if is_check_in else DialogueMode.PROBING
+
+        # Form modality: use template-based validation messages
+        if normalized.source_modality == InputModality.FORM:
+            message = _build_missing_fields_message(normalized.missing_fields)
+            if normalized.validation_errors:
+                errors = "; ".join(normalized.validation_errors)
+                message = f"{errors}. {message}"
+        else:
+            # Voice/chat/hybrid: generate conversational probe using LLM
+            message = await self._generate_conversational_probe(
+                intent=normalized.intent,
+                collected_data=normalized.data,
+                missing_fields=normalized.missing_fields,
+            )
 
         return ExtendedSAGEResponse(
             message=message,
             current_mode=current_mode,
             pending_data_request=decision.pending_data_request,
         )
+
+    async def _generate_conversational_probe(
+        self,
+        intent: str,
+        collected_data: dict[str, Any],
+        missing_fields: list[str],
+    ) -> str:
+        """Generate a natural conversational follow-up question using LLM.
+
+        Creates contextual, SAGE-personality-aligned questions to gather
+        missing data during multi-turn collection.
+        """
+        prompt = _build_probe_prompt(intent, collected_data, missing_fields)
+
+        try:
+            response = self.llm_client.chat.completions.create(
+                model=self.intent_extractor.model,
+                messages=[
+                    {"role": "system", "content": _PROBE_SYSTEM_MESSAGE},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+                max_tokens=150,
+            )
+            return response.choices[0].message.content or _build_missing_fields_message(missing_fields)
+        except Exception as e:
+            logger.warning(f"LLM probe generation failed: {e}, falling back to template")
+            return _build_missing_fields_message(missing_fields)
 
     async def _process_with_engine(
         self,
@@ -371,3 +411,47 @@ def _build_user_message(normalized: NormalizedInput) -> str:
         return f"[Form data: {data_summary}]"
 
     return f"{normalized.raw_input} [Context: {data_summary}]"
+
+
+_PROBE_SYSTEM_MESSAGE = """You are SAGE, an AI tutor. Generate a brief, natural follow-up question.
+
+Personality:
+- Direct, gets to the point
+- Respects intelligence, doesn't talk down
+- Slightly dry, efficient
+- Think JARVIS, not professor
+
+Rules:
+- One short question only (1-2 sentences max)
+- Acknowledge what they already told you
+- Ask naturally about missing info
+- Sound conversational, not like a form"""
+
+
+def _build_probe_prompt(
+    intent: str,
+    collected_data: dict[str, Any],
+    missing_fields: list[str],
+) -> str:
+    """Build prompt for generating conversational follow-up questions."""
+    collected_summary = (
+        ", ".join(f"{k}={v}" for k, v in collected_data.items() if v is not None)
+        if collected_data
+        else "nothing yet"
+    )
+
+    intent_context = {
+        "session_check_in": "gathering how the learner is showing up today (energy, time, mindset)",
+        "practice_setup": "setting up a practice/roleplay scenario",
+        "verification": "checking understanding of a concept",
+        "outcome_discovery": "discovering what the learner wants to achieve",
+        "application_event": "capturing an upcoming real-world application",
+    }.get(intent, "gathering information")
+
+    return f"""Generate a brief follow-up question.
+
+Context: {intent_context}
+Already collected: {collected_summary}
+Still need: {", ".join(missing_fields)}
+
+Write ONE short, natural question to gather the missing info."""
