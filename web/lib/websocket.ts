@@ -1,13 +1,36 @@
 /**
  * SAGE WebSocket Client for streaming chat
+ *
+ * Supports:
+ * - Text messages (chat)
+ * - Form submissions (UI parity)
+ * - Voice messages
  */
 
 import type { WSMessage, WSCompleteMessage } from "@/types";
 
+type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 type CompleteHandler = (message: WSCompleteMessage) => void;
 type ChunkHandler = (content: string) => void;
 type ErrorHandler = (message: string) => void;
-type StatusHandler = (status: "connecting" | "connected" | "disconnected" | "error") => void;
+type StatusHandler = (status: ConnectionStatus) => void;
+
+/**
+ * Outgoing message types for WebSocket communication.
+ */
+interface WSOutgoingTextMessage {
+  type: "text";
+  content: string;
+  is_voice: boolean;
+}
+
+interface WSOutgoingFormMessage {
+  type: "form_submission";
+  form_id: string;
+  data: Record<string, unknown>;
+}
+
+type WSOutgoingMessage = WSOutgoingTextMessage | WSOutgoingFormMessage;
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
 
@@ -55,26 +78,7 @@ export class ChatWebSocket {
     this.ws.onmessage = (event) => {
       try {
         const message: WSMessage = JSON.parse(event.data);
-
-        switch (message.type) {
-          case "chunk":
-            // Notify chunk handlers for streaming indicator
-            this.chunkHandlers.forEach((handler) => handler(message.content));
-            break;
-
-          case "complete":
-            // Notify complete handlers with the full response
-            this.completeHandlers.forEach((handler) => handler(message));
-            break;
-
-          case "error":
-            // Notify error handlers
-            this.errorHandlers.forEach((handler) => handler(message.message));
-            break;
-
-          default:
-            console.warn("Unknown message type:", message);
-        }
+        this.handleMessage(message);
       } catch {
         console.error("Failed to parse WebSocket message:", event.data);
       }
@@ -89,6 +93,22 @@ export class ChatWebSocket {
       console.error("WebSocket error:", error);
       this.notifyStatus("error");
     };
+  }
+
+  private handleMessage(message: WSMessage): void {
+    switch (message.type) {
+      case "chunk":
+        this.chunkHandlers.forEach((handler) => handler(message.content));
+        break;
+      case "complete":
+        this.completeHandlers.forEach((handler) => handler(message));
+        break;
+      case "error":
+        this.errorHandlers.forEach((handler) => handler(message.message));
+        break;
+      default:
+        console.warn("Unknown message type:", message);
+    }
   }
 
   private scheduleReconnect(): void {
@@ -106,17 +126,39 @@ export class ChatWebSocket {
     }, delay);
   }
 
+  /**
+   * Send a text message (chat or voice transcription).
+   */
   send(content: string, isVoice: boolean = false): void {
-    if (this.ws?.readyState !== WebSocket.OPEN) {
-      throw new Error("WebSocket is not connected");
-    }
-
-    const message = JSON.stringify({
+    this.sendMessage({
+      type: "text",
       content,
       is_voice: isVoice,
     });
+  }
 
-    this.ws.send(message);
+  /**
+   * Send a form submission from UI components.
+   *
+   * @param formId - Identifier for the form type (e.g., "check-in-abc123")
+   * @param data - Form field values
+   */
+  sendFormSubmission(formId: string, data: Record<string, unknown>): void {
+    this.sendMessage({
+      type: "form_submission",
+      form_id: formId,
+      data,
+    });
+  }
+
+  /**
+   * Internal method to send any message type.
+   */
+  private sendMessage(message: WSOutgoingMessage): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      throw new Error("WebSocket is not connected");
+    }
+    this.ws.send(JSON.stringify(message));
   }
 
   disconnect(): void {
@@ -149,7 +191,7 @@ export class ChatWebSocket {
     return () => this.statusHandlers.delete(handler);
   }
 
-  private notifyStatus(status: "connecting" | "connected" | "disconnected" | "error"): void {
+  private notifyStatus(status: ConnectionStatus): void {
     this.statusHandlers.forEach((handler) => handler(status));
   }
 
