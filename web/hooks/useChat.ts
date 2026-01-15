@@ -45,6 +45,8 @@ export function useChat({ sessionId, onMessage, onError }: UseChatOptions) {
         content: response.message,
         timestamp: new Date().toISOString(),
         mode: response.mode as DialogueMode,
+        ui_tree: response.ui_tree ?? undefined,
+        pending_data_request: response.pending_data_request ?? undefined,
       };
 
       setMessages((prev) => [...prev, chatMessage]);
@@ -111,11 +113,26 @@ export function useChat({ sessionId, onMessage, onError }: UseChatOptions) {
     setMessages([]);
   }, []);
 
+  // Send form submission from UI components
+  const sendFormSubmission = useCallback(
+    (formId: string, data: Record<string, unknown>) => {
+      if (!wsRef.current?.isConnected) {
+        console.error("Not connected to chat");
+        return;
+      }
+
+      setIsTyping(true);
+      wsRef.current.sendFormSubmission(formId, data);
+    },
+    []
+  );
+
   return {
     messages,
     status,
     isTyping,
     sendMessage,
+    sendFormSubmission,
     clearMessages,
     isConnected: status === "connected",
   };
