@@ -299,32 +299,37 @@ class TestDetermineOutputStrategy:
         assert strategy == OutputStrategy.TEXT_ONLY
 
 
+@pytest.mark.asyncio
 class TestCreateDataRequestResponse:
     """Test _create_data_request_response method."""
 
-    def test_single_missing_field_message(self, orchestrator):
-        """Test message for single missing field."""
+    async def test_form_uses_template_message(self, orchestrator):
+        """Test form modality uses template-based messages."""
         decision = make_request_more_decision("practice_setup", ["scenario_type"])
-        normalized = make_normalized_input("practice_setup", ["scenario_type"])
+        normalized = make_normalized_input(
+            "practice_setup",
+            ["scenario_type"],
+            modality=InputModality.FORM,
+        )
 
-        response = orchestrator._create_data_request_response(decision, normalized)
+        response = await orchestrator._create_data_request_response(decision, normalized)
 
         assert "scenario_type" in response.message
         assert response.pending_data_request is not None
 
-    def test_multiple_missing_fields_message(self, orchestrator):
-        """Test message for multiple missing fields."""
+    async def test_form_multiple_missing_fields(self, orchestrator):
+        """Test form message for multiple missing fields."""
         fields = ["scenario_type", "difficulty"]
         decision = make_request_more_decision("practice_setup", fields)
-        normalized = make_normalized_input("practice_setup", fields)
+        normalized = make_normalized_input("practice_setup", fields, modality=InputModality.FORM)
 
-        response = orchestrator._create_data_request_response(decision, normalized)
+        response = await orchestrator._create_data_request_response(decision, normalized)
 
         assert "scenario_type" in response.message
         assert "difficulty" in response.message
 
-    def test_validation_errors_included(self, orchestrator):
-        """Test validation errors are included in message."""
+    async def test_form_validation_errors_included(self, orchestrator):
+        """Test validation errors are included in form message."""
         decision = make_request_more_decision("session_check_in", [])
         normalized = make_normalized_input(
             "session_check_in",
@@ -333,9 +338,66 @@ class TestCreateDataRequestResponse:
             validation_errors=["Invalid energy level"],
         )
 
-        response = orchestrator._create_data_request_response(decision, normalized)
+        response = await orchestrator._create_data_request_response(decision, normalized)
 
         assert "Invalid energy level" in response.message
+
+    async def test_voice_uses_llm_probe(self, orchestrator, mock_llm_client):
+        """Test voice modality generates conversational probe via LLM."""
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(message=MagicMock(content="Got it, 30 minutes. How are you feeling energy-wise?"))
+        ]
+        mock_llm_client.chat.completions.create.return_value = mock_response
+
+        decision = make_request_more_decision("session_check_in", ["energyLevel"])
+        normalized = make_normalized_input(
+            "session_check_in",
+            ["energyLevel"],
+            modality=InputModality.VOICE,
+        )
+        normalized.data = {"timeAvailable": "focused"}
+
+        response = await orchestrator._create_data_request_response(decision, normalized)
+
+        assert "energy" in response.message.lower()
+        assert mock_llm_client.chat.completions.create.called
+
+    async def test_chat_uses_llm_probe(self, orchestrator, mock_llm_client):
+        """Test chat modality generates conversational probe via LLM."""
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(message=MagicMock(content="What kind of scenario would you like to practice?"))
+        ]
+        mock_llm_client.chat.completions.create.return_value = mock_response
+
+        decision = make_request_more_decision("practice_setup", ["scenario_type"])
+        normalized = make_normalized_input(
+            "practice_setup",
+            ["scenario_type"],
+            modality=InputModality.CHAT,
+        )
+
+        response = await orchestrator._create_data_request_response(decision, normalized)
+
+        assert response.message == "What kind of scenario would you like to practice?"
+        assert mock_llm_client.chat.completions.create.called
+
+    async def test_llm_error_falls_back_to_template(self, orchestrator, mock_llm_client):
+        """Test LLM failure falls back to template message."""
+        mock_llm_client.chat.completions.create.side_effect = Exception("API error")
+
+        decision = make_request_more_decision("session_check_in", ["energyLevel"])
+        normalized = make_normalized_input(
+            "session_check_in",
+            ["energyLevel"],
+            modality=InputModality.VOICE,
+        )
+
+        response = await orchestrator._create_data_request_response(decision, normalized)
+
+        assert "energyLevel" in response.message
+        assert response.pending_data_request is not None
 
 
 class TestPendingRequestManagement:
@@ -446,3 +508,132 @@ class TestProcessInput:
         )
 
         assert mock_llm_client.chat.completions.create.called
+
+
+class TestBuildProbePrompt:
+    """Test _build_probe_prompt function."""
+
+    def test_includes_intent_context(self):
+        """Test prompt includes intent-appropriate context."""
+        from sage.orchestration.orchestrator import _build_probe_prompt
+
+        prompt = _build_probe_prompt(
+            intent="session_check_in",
+            collected_data={"timeAvailable": "focused"},
+            missing_fields=["energyLevel"],
+        )
+
+        assert "energy" in prompt.lower() or "energyLevel" in prompt
+        assert "session_check_in" in prompt or "showing up today" in prompt
+        assert "timeAvailable=focused" in prompt
+
+    def test_handles_empty_collected_data(self):
+        """Test prompt handles no collected data."""
+        from sage.orchestration.orchestrator import _build_probe_prompt
+
+        prompt = _build_probe_prompt(
+            intent="practice_setup",
+            collected_data={},
+            missing_fields=["scenario_type"],
+        )
+
+        assert "nothing yet" in prompt
+        assert "scenario_type" in prompt
+
+    def test_multiple_missing_fields(self):
+        """Test prompt lists all missing fields."""
+        from sage.orchestration.orchestrator import _build_probe_prompt
+
+        prompt = _build_probe_prompt(
+            intent="session_check_in",
+            collected_data={},
+            missing_fields=["timeAvailable", "energyLevel", "mindset"],
+        )
+
+        assert "timeAvailable" in prompt
+        assert "energyLevel" in prompt
+        assert "mindset" in prompt
+
+
+@pytest.mark.asyncio
+class TestMultiTurnVoiceFlow:
+    """Integration tests for multi-turn voice data collection."""
+
+    async def test_voice_multi_turn_collection(self, orchestrator, mock_llm_client):
+        """Test complete multi-turn voice collection flow.
+
+        Turn 1: User mentions practice but missing scenario type (required)
+        Turn 2: User provides scenario type, data complete
+        """
+        # Mock LLM to:
+        # 1. First call: Intent extraction returns incomplete data (missing scenario_type)
+        # 2. Second call: Probe generation returns conversational question
+        def mock_create(**kwargs):
+            messages = kwargs.get("messages", [])
+            if any("Generate a brief follow-up" in str(m) for m in messages):
+                mock_resp = MagicMock()
+                mock_resp.choices = [
+                    MagicMock(message=MagicMock(content="Got it, hard mode. What kind of scenario—pricing, negotiation, or something else?"))
+                ]
+                return mock_resp
+            # Intent extraction returns incomplete data (difficulty but no scenario_type)
+            mock_resp = MagicMock()
+            mock_resp.choices = [
+                MagicMock(message=MagicMock(
+                    content='{"intent": "practice_setup", "data": {"difficulty": "hard"}, "confidence": 0.9}'
+                ))
+            ]
+            return mock_resp
+
+        mock_llm_client.chat.completions.create.side_effect = mock_create
+
+        response1 = await orchestrator.process_input(
+            raw_input="I want to practice something hard",
+            source_modality=InputModality.VOICE,
+            session_id="multi-turn-session",
+        )
+
+        # Should request more data (scenario_type is required for practice_setup)
+        assert response1.pending_data_request is not None
+        assert "scenario" in response1.message.lower()
+
+        # Verify pending request stored
+        pending = orchestrator.get_pending_request("multi-turn-session")
+        assert pending is not None
+        assert pending.intent == "practice_setup"
+        assert pending.collected_data.get("difficulty") == "hard"
+        assert "scenario_type" in pending.missing_fields
+
+    async def test_pending_cleared_after_complete(self, orchestrator, mock_llm_client):
+        """Test pending request is cleared when data becomes complete."""
+        # Set up pending request
+        orchestrator._pending_requests["complete-session"] = PendingDataRequest(
+            intent="session_check_in",
+            collected_data={"timeAvailable": "focused"},
+            missing_fields=["energyLevel"],
+        )
+
+        # Mock extraction to return complete data (merges with pending)
+        mock_llm_client.chat.completions.create.return_value = make_mock_extraction_response(
+            '{"intent": "session_check_in", "data": {"energyLevel": 80}, "confidence": 0.9}'
+        )
+        orchestrator.conversation_engine.resume_session = MagicMock()
+        orchestrator.conversation_engine.process_turn_streaming = AsyncMock(
+            return_value=SAGEResponse(
+                message="Great, let's get started!",
+                current_mode=DialogueMode.CHECK_IN,
+            )
+        )
+
+        response = await orchestrator.process_input(
+            raw_input="feeling energized",
+            source_modality=InputModality.VOICE,
+            session_id="complete-session",
+        )
+
+        # Data complete - should process, not request more
+        assert response.pending_data_request is None
+        assert response.message == "Great, let's get started!"
+
+        # Pending should be cleared
+        assert orchestrator.get_pending_request("complete-session") is None
