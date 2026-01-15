@@ -99,7 +99,7 @@ INTENT_SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
-    "application_capture": {
+    "application_event": {
         "description": "Capture upcoming real-world application",
         "required": ["context"],
         "optional": ["planned_date", "stakes", "concept_ids"],
@@ -123,7 +123,7 @@ INTENT_SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
-    "verification_response": {
+    "verification": {
         "description": "Response to a verification question",
         "required": ["answer"],
         "optional": ["confidence", "notes"],

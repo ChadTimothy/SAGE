@@ -73,15 +73,15 @@ class TestIntentSchemas:
         assert "difficulty" in schema["optional"]
         assert schema["extraction_hints"]["difficulty"]["type"] == "enum"
 
-    def test_application_capture_schema(self):
-        """Test application_capture schema structure."""
-        schema = INTENT_SCHEMAS["application_capture"]
+    def test_application_event_schema(self):
+        """Test application_event schema structure."""
+        schema = INTENT_SCHEMAS["application_event"]
         assert "context" in schema["required"]
         assert "stakes" in schema["optional"]
 
-    def test_verification_response_schema(self):
-        """Test verification_response schema structure."""
-        schema = INTENT_SCHEMAS["verification_response"]
+    def test_verification_schema(self):
+        """Test verification schema structure."""
+        schema = INTENT_SCHEMAS["verification"]
         assert "answer" in schema["required"]
         assert "confidence" in schema["optional"]
 
@@ -268,13 +268,13 @@ class TestSemanticIntentExtractor:
         assert result.intent == "unknown"
         assert result.data_complete is True  # No required fields for unknown
 
-    def test_extract_sync_application_capture(self, extractor, mock_client):
+    def test_extract_sync_application_event(self, extractor, mock_client):
         """Test extraction for application capture."""
         mock_response = MagicMock()
         mock_response.choices = [
             MagicMock(
                 message=MagicMock(
-                    content='{"intent": "application_capture", "data": {"context": "pricing call tomorrow", "stakes": "high"}, "confidence": 0.92}'
+                    content='{"intent": "application_event", "data": {"context": "pricing call tomorrow", "stakes": "high"}, "confidence": 0.92}'
                 )
             )
         ]
@@ -282,18 +282,18 @@ class TestSemanticIntentExtractor:
 
         result = extractor.extract_sync("I have a big pricing call tomorrow")
 
-        assert result.intent == "application_capture"
+        assert result.intent == "application_event"
         assert result.data["context"] == "pricing call tomorrow"
         assert result.data["stakes"] == "high"
         assert result.data_complete is True  # context is the only required field
 
-    def test_extract_sync_verification_response(self, extractor, mock_client):
+    def test_extract_sync_verification(self, extractor, mock_client):
         """Test extraction for verification response."""
         mock_response = MagicMock()
         mock_response.choices = [
             MagicMock(
                 message=MagicMock(
-                    content='{"intent": "verification_response", "data": {"answer": "Start high with room to come down", "confidence": 85}, "confidence": 0.88}'
+                    content='{"intent": "verification", "data": {"answer": "Start high with room to come down", "confidence": 85}, "confidence": 0.88}'
                 )
             )
         ]
@@ -301,7 +301,7 @@ class TestSemanticIntentExtractor:
 
         result = extractor.extract_sync("My answer is to start high with room to come down")
 
-        assert result.intent == "verification_response"
+        assert result.intent == "verification"
         assert "Start high" in result.data["answer"]
         assert result.data_complete is True  # answer is present
 
