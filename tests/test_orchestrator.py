@@ -723,7 +723,7 @@ class TestUIGenerationIntegration:
         )
 
         # Mock UI agent to fail
-        orchestrator.ui_agent.generate = MagicMock(side_effect=Exception("LLM timeout"))
+        orchestrator.ui_agent.generate_async = AsyncMock(side_effect=Exception("LLM timeout"))
 
         response = await orchestrator.process_input(
             raw_input="",

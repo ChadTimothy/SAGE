@@ -369,7 +369,7 @@ class SAGEOrchestrator:
             ui_context = self._build_ui_generation_context(normalized, decision)
 
             try:
-                ui_spec = self.ui_agent.generate(
+                ui_spec = await self.ui_agent.generate_async(
                     purpose=ui_purpose,
                     context=ui_context,
                 )
