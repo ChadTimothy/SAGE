@@ -95,6 +95,7 @@ export default function ChatPage(): JSX.Element {
     currentVoice,
     error: voiceError,
   } = useGrokVoice({
+    sessionId,
     onTranscript: (text, isFinal) => {
       if (isFinal && text.trim()) {
         sendMessage(text.trim(), true);

@@ -6,7 +6,7 @@ export type GrokVoice = "ara" | "rex" | "sal" | "eve" | "leo";
 export type VoiceStatus = "idle" | "connecting" | "connected" | "listening" | "speaking" | "error";
 
 export interface UseGrokVoiceOptions {
-  apiKey?: string;
+  sessionId: string;
   voice?: GrokVoice;
   onTranscript?: (text: string, isFinal: boolean) => void;
   onResponse?: (text: string) => void;
@@ -30,15 +30,16 @@ export interface UseGrokVoiceReturn {
   error: string | null;
 }
 
-const GROK_REALTIME_URL = "wss://api.x.ai/v1/realtime";
+const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+const getVoiceUrl = (sessionId: string) => `${WS_BASE}/api/voice/${sessionId}`;
 
 export function useGrokVoice({
-  apiKey,
+  sessionId,
   voice: initialVoice = "ara",
   onTranscript,
   onResponse,
   onError,
-}: UseGrokVoiceOptions = {}): UseGrokVoiceReturn {
+}: UseGrokVoiceOptions): UseGrokVoiceReturn {
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -50,11 +51,10 @@ export function useGrokVoice({
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
 
-  // Connect to Grok Voice API
+  // Connect to voice backend proxy
   const connect = useCallback(async () => {
-    const key = apiKey || process.env.NEXT_PUBLIC_XAI_API_KEY;
-    if (!key) {
-      const err = "XAI API key not configured";
+    if (!sessionId) {
+      const err = "Session ID is required for voice";
       setError(err);
       onError?.(err);
       return;
@@ -64,33 +64,12 @@ export function useGrokVoice({
       setStatus("connecting");
       setError(null);
 
-      // Create WebSocket connection with auth
-      const ws = new WebSocket(`${GROK_REALTIME_URL}?model=grok-2-voice`);
+      // Connect to backend voice proxy (API key stays on server)
+      const ws = new WebSocket(getVoiceUrl(sessionId));
 
       ws.onopen = () => {
-        // Send session configuration
-        ws.send(JSON.stringify({
-          type: "session.update",
-          session: {
-            voice: currentVoice,
-            input_audio_format: "pcm16",
-            output_audio_format: "pcm16",
-            turn_detection: {
-              type: "server_vad",
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 500,
-            },
-          },
-        }));
-
-        // Authenticate
-        ws.send(JSON.stringify({
-          type: "auth",
-          api_key: key,
-        }));
-
-        setStatus("connected");
+        // Send initial voice preference (backend handles session config and auth)
+        ws.send(JSON.stringify({ voice: currentVoice }));
       };
 
       ws.onmessage = (event) => {
@@ -121,7 +100,7 @@ export function useGrokVoice({
       setStatus("error");
       onError?.(errorMsg);
     }
-  }, [apiKey, currentVoice, onError]);
+  }, [sessionId, currentVoice, onError]);
 
   // Play received audio
   const playAudio = useCallback((base64Audio: string) => {
@@ -156,9 +135,14 @@ export function useGrokVoice({
     }
   }, []);
 
-  // Handle incoming messages from Grok
+  // Handle incoming messages from backend/Grok
   const handleServerMessage = useCallback((message: Record<string, unknown>) => {
     switch (message.type) {
+      case "session.ready":
+        // Backend connected to Grok successfully
+        setStatus("connected");
+        break;
+
       case "session.created":
       case "session.updated":
         console.log("Session configured:", message);
