@@ -66,7 +66,7 @@ export default function ChatPage(): JSX.Element {
   const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(false);
   const lastVoicedMessageIdRef = useRef<string | null>(null);
 
-  const { messages, status, isTyping, sendMessage, isConnected } = useChat({
+  const { messages, status, isTyping, sendMessage, sendFormSubmission, isConnected } = useChat({
     sessionId,
   });
 
@@ -133,6 +133,16 @@ export default function ChatPage(): JSX.Element {
       sendMessage(suggestion, false);
     },
     [sendMessage]
+  );
+
+  // Handle UI tree form submissions
+  const handleUISubmit = useCallback(
+    (data: Record<string, unknown>) => {
+      // Extract form ID from action or generate one based on intent
+      const formId = (data._formId as string) || (data._action as string) || "ui-form";
+      sendFormSubmission(formId, data);
+    },
+    [sendFormSubmission]
   );
 
   // Practice mode handlers
@@ -272,6 +282,8 @@ export default function ChatPage(): JSX.Element {
                     content={message.content}
                     timestamp={message.timestamp || new Date().toISOString()}
                     mode={message.mode}
+                    ui_tree={message.ui_tree}
+                    onUISubmit={handleUISubmit}
                   />
                 ))}
               </AnimatePresence>

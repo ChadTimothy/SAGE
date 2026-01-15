@@ -41,6 +41,10 @@ export interface ChatMessage {
   content: string;
   timestamp?: string;
   mode?: DialogueMode;
+  /** UI tree for ad-hoc UI generation (assistant messages only) */
+  ui_tree?: UITreeNode;
+  /** Pending data request for multi-turn collection (assistant messages only) */
+  pending_data_request?: PendingDataRequest;
 }
 
 export type DialogueMode =

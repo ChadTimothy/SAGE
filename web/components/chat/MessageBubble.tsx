@@ -3,7 +3,8 @@
 import { motion } from "framer-motion";
 import { cn, formatTime, formatDialogueMode } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
-import type { DialogueMode } from "@/types";
+import { UITreeForm } from "@/lib/ui-renderer";
+import type { DialogueMode, UITreeNode } from "@/types";
 
 export interface MessageBubbleProps {
   role: "user" | "assistant" | "system";
@@ -11,6 +12,10 @@ export interface MessageBubbleProps {
   timestamp: string;
   isStreaming?: boolean;
   mode?: DialogueMode;
+  /** UI tree for ad-hoc UI generation */
+  ui_tree?: UITreeNode;
+  /** Callback when UI form is submitted */
+  onUISubmit?: (data: Record<string, unknown>) => void;
 }
 
 const ANIMATION_CONFIG = {
@@ -25,9 +30,15 @@ export function MessageBubble({
   timestamp,
   isStreaming = false,
   mode,
+  ui_tree,
+  onUISubmit,
 }: MessageBubbleProps): JSX.Element {
   const isUser = role === "user";
   const formattedTime = formatTime(timestamp);
+
+  const handleUISubmit = (data: Record<string, unknown>) => {
+    onUISubmit?.(data);
+  };
 
   if (role === "system") {
     return (
@@ -75,6 +86,13 @@ export function MessageBubble({
             <span className="inline-block w-2 h-4 ml-1 bg-sage-600 dark:bg-sage-400 animate-pulse" />
           )}
         </div>
+
+        {/* Render UI tree for ad-hoc UI generation */}
+        {!isUser && ui_tree && (
+          <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+            <UITreeForm tree={ui_tree} onSubmit={handleUISubmit} />
+          </div>
+        )}
 
         <div
           className={cn(
