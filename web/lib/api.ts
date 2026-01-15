@@ -97,6 +97,48 @@ class ApiClient {
   async health(): Promise<{ status: string }> {
     return this.request<{ status: string }>("/health");
   }
+
+  // Practice endpoints
+  async startPractice(data: {
+    scenario_id: string;
+    title: string;
+    sage_role: string;
+    user_role: string;
+    description?: string;
+    learner_id?: string;
+  }): Promise<{ session_id: string; initial_message: string }> {
+    return this.request("/api/practice/start", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async sendPracticeMessage(
+    sessionId: string,
+    content: string
+  ): Promise<{ message: string }> {
+    return this.request(`/api/practice/${sessionId}/message`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  async getPracticeHint(sessionId: string): Promise<{ hint: string }> {
+    return this.request(`/api/practice/${sessionId}/hint`, {
+      method: "POST",
+    });
+  }
+
+  async endPractice(sessionId: string): Promise<{
+    positives: string[];
+    improvements: string[];
+    summary: string;
+    revealed_gaps: string[];
+  }> {
+    return this.request(`/api/practice/${sessionId}/end`, {
+      method: "POST",
+    });
+  }
 }
 
 // Export singleton instance

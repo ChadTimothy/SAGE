@@ -27,11 +27,14 @@ from .models import (
     Message,
     Outcome,
     OutcomeStatus,
+    PracticeFeedback,
+    PracticeScenario,
     Proof,
     ProofExchange,
     Session,
     SessionContext,
     SessionEndingState,
+    SessionType,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -119,6 +122,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     proofs_earned JSON,
     connections_found JSON,
     ending_state JSON,
+    session_type TEXT DEFAULT 'learning',
+    practice_scenario JSON,
+    practice_feedback JSON,
     FOREIGN KEY (learner_id) REFERENCES learners(id),
     FOREIGN KEY (outcome_id) REFERENCES outcomes(id)
 );
@@ -627,8 +633,9 @@ class GraphStore:
                 INSERT INTO sessions (
                     id, learner_id, outcome_id, started_at, ended_at,
                     context, messages, summary, concepts_explored,
-                    proofs_earned, connections_found, ending_state
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    proofs_earned, connections_found, ending_state,
+                    session_type, practice_scenario, practice_feedback
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session.id,
@@ -643,6 +650,9 @@ class GraphStore:
                     json.dumps(session.proofs_earned),
                     json.dumps(session.connections_found),
                     session.ending_state.model_dump_json() if session.ending_state else None,
+                    session.session_type.value,
+                    session.practice_scenario.model_dump_json() if session.practice_scenario else None,
+                    session.practice_feedback.model_dump_json() if session.practice_feedback else None,
                 ),
             )
         return session
@@ -686,7 +696,10 @@ class GraphStore:
                     concepts_explored = ?,
                     proofs_earned = ?,
                     connections_found = ?,
-                    ending_state = ?
+                    ending_state = ?,
+                    session_type = ?,
+                    practice_scenario = ?,
+                    practice_feedback = ?
                 WHERE id = ?
                 """,
                 (
@@ -698,6 +711,9 @@ class GraphStore:
                     json.dumps(session.proofs_earned),
                     json.dumps(session.connections_found),
                     session.ending_state.model_dump_json() if session.ending_state else None,
+                    session.session_type.value,
+                    session.practice_scenario.model_dump_json() if session.practice_scenario else None,
+                    session.practice_feedback.model_dump_json() if session.practice_feedback else None,
                     session.id,
                 ),
             )
@@ -717,6 +733,16 @@ class GraphStore:
             if row["ending_state"]
             else None
         )
+        practice_scenario = (
+            PracticeScenario.model_validate_json(row["practice_scenario"])
+            if row["practice_scenario"]
+            else None
+        )
+        practice_feedback = (
+            PracticeFeedback.model_validate_json(row["practice_feedback"])
+            if row["practice_feedback"]
+            else None
+        )
 
         return Session(
             id=row["id"],
@@ -731,6 +757,9 @@ class GraphStore:
             proofs_earned=_deserialize_json(row["proofs_earned"]) or [],
             connections_found=_deserialize_json(row["connections_found"]) or [],
             ending_state=ending_state,
+            session_type=SessionType(row["session_type"]) if row["session_type"] else SessionType.LEARNING,
+            practice_scenario=practice_scenario,
+            practice_feedback=practice_feedback,
         )
 
     # =========================================================================

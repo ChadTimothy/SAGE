@@ -125,6 +125,52 @@ class ProofResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# Practice schemas
+class PracticeStartRequest(BaseModel):
+    """Request to start a practice session."""
+
+    scenario_id: str
+    title: str
+    sage_role: str
+    user_role: str
+    description: Optional[str] = None
+    learner_id: Optional[str] = None
+
+
+class PracticeStartResponse(BaseModel):
+    """Response after starting practice."""
+
+    session_id: str
+    initial_message: str
+
+
+class PracticeMessageRequest(BaseModel):
+    """Request to send a practice message."""
+
+    content: str
+
+
+class PracticeMessageResponse(BaseModel):
+    """Response from practice character."""
+
+    message: str
+
+
+class PracticeHintResponse(BaseModel):
+    """Hint from SAGE during practice."""
+
+    hint: str
+
+
+class PracticeFeedbackResponse(BaseModel):
+    """Feedback after practice session."""
+
+    positives: list[str] = Field(default_factory=list)
+    improvements: list[str] = Field(default_factory=list)
+    summary: str
+    revealed_gaps: list[str] = Field(default_factory=list)
+
+
 # Graph schemas
 class GraphNodeResponse(BaseModel):
     """Graph node for visualization."""
