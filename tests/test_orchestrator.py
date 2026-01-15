@@ -637,3 +637,197 @@ class TestMultiTurnVoiceFlow:
 
         # Pending should be cleared
         assert orchestrator.get_pending_request("complete-session") is None
+
+
+@pytest.mark.asyncio
+class TestUIGenerationIntegration:
+    """Integration tests for UI generation in orchestrator."""
+
+    async def test_ui_tree_generated_for_form_modality(self, orchestrator, mock_llm_client):
+        """Test UI tree is generated for form modality with UI_TREE strategy."""
+        import json
+        # Mock conversation engine response
+        mock_response = SAGEResponse(
+            message="Let's check in.",
+            current_mode=DialogueMode.CHECK_IN,
+        )
+        orchestrator.conversation_engine.resume_session = MagicMock()
+        orchestrator.conversation_engine.process_turn_streaming = AsyncMock(
+            return_value=mock_response
+        )
+
+        # Mock UI agent response
+        ui_response = json.dumps({
+            "tree": {"component": "Card", "props": {"title": "Check-in"}},
+            "voice_fallback": "How are you showing up today?",
+            "purpose": "Session check-in",
+            "estimated_interaction_time": 30,
+        })
+        mock_llm_client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(content=ui_response))]
+        )
+
+        response = await orchestrator.process_input(
+            raw_input="",
+            source_modality=InputModality.FORM,
+            session_id="ui-test-session",
+            form_id="session-check-in",
+            form_data={"timeAvailable": "focused", "energyLevel": 80},
+        )
+
+        # UI tree should be present for form modality
+        assert response.ui_tree is not None
+        assert response.ui_tree.component == "Card"
+        assert response.voice_hints is not None
+        assert response.voice_hints.voice_fallback == "How are you showing up today?"
+
+    async def test_no_ui_tree_for_voice_only(self, orchestrator, mock_llm_client):
+        """Test no UI tree generated for voice-only modality with VOICE_DESCRIPTION."""
+        import json
+        # Mock extraction
+        mock_llm_client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(
+                content='{"intent": "session_check_in", "data": {"timeAvailable": "focused", "energyLevel": 80}, "confidence": 0.9}'
+            ))]
+        )
+
+        # Mock conversation engine
+        mock_response = SAGEResponse(
+            message="Great, you have about 45 minutes.",
+            current_mode=DialogueMode.CHECK_IN,
+        )
+        orchestrator.conversation_engine.resume_session = MagicMock()
+        orchestrator.conversation_engine.process_turn_streaming = AsyncMock(
+            return_value=mock_response
+        )
+
+        response = await orchestrator.process_input(
+            raw_input="I have 45 minutes and feeling good",
+            source_modality=InputModality.VOICE,
+            session_id="voice-test-session",
+        )
+
+        # Voice modality should NOT include UI tree (VOICE_DESCRIPTION strategy)
+        assert response.ui_tree is None
+
+    async def test_ui_generation_graceful_failure(self, orchestrator, mock_llm_client):
+        """Test UI generation fails gracefully without crashing."""
+        # Mock conversation engine response
+        mock_response = SAGEResponse(
+            message="Let's get started.",
+            current_mode=DialogueMode.CHECK_IN,
+        )
+        orchestrator.conversation_engine.resume_session = MagicMock()
+        orchestrator.conversation_engine.process_turn_streaming = AsyncMock(
+            return_value=mock_response
+        )
+
+        # Mock UI agent to fail
+        orchestrator.ui_agent.generate_async = AsyncMock(side_effect=Exception("LLM timeout"))
+
+        response = await orchestrator.process_input(
+            raw_input="",
+            source_modality=InputModality.FORM,
+            session_id="graceful-fail-session",
+            form_id="session-check-in",
+            form_data={"timeAvailable": "focused", "energyLevel": 80},
+        )
+
+        # Should still return a valid response, just without UI tree
+        assert response.message == "Let's get started."
+        assert response.ui_tree is None  # Graceful degradation
+
+    async def test_hybrid_modality_generates_ui(self, orchestrator, mock_llm_client):
+        """Test HYBRID modality generates both text and UI tree."""
+        import json
+        # Mock extraction for hybrid input
+        extraction_response = '{"intent": "practice_setup", "data": {"scenario_type": "negotiation", "difficulty": "medium"}, "confidence": 0.9}'
+        # Mock UI generation response
+        ui_response = json.dumps({
+            "tree": {"component": "Stack", "props": {}, "children": [
+                {"component": "Text", "props": {"content": "Practice Mode"}}
+            ]},
+            "voice_fallback": "Starting practice mode for negotiation.",
+            "purpose": "Practice setup confirmation",
+            "estimated_interaction_time": 20,
+        })
+
+        def mock_create(**kwargs):
+            messages = kwargs.get("messages", [])
+            # Check if this is a UI generation call (has UI_AGENT_SYSTEM_PROMPT)
+            system_msg = messages[0].get("content", "") if messages else ""
+            if "UI generation agent" in system_msg or "You generate UI component trees" in system_msg:
+                return MagicMock(
+                    choices=[MagicMock(message=MagicMock(content=ui_response))]
+                )
+            # Otherwise it's extraction
+            return MagicMock(
+                choices=[MagicMock(message=MagicMock(content=extraction_response))]
+            )
+
+        mock_llm_client.chat.completions.create.side_effect = mock_create
+
+        # Mock conversation engine
+        mock_response = SAGEResponse(
+            message="Practice mode ready.",
+            current_mode=DialogueMode.PROBING,
+        )
+        orchestrator.conversation_engine.resume_session = MagicMock()
+        orchestrator.conversation_engine.process_turn_streaming = AsyncMock(
+            return_value=mock_response
+        )
+
+        response = await orchestrator.process_input(
+            raw_input="Start a negotiation practice",
+            source_modality=InputModality.HYBRID,
+            session_id="hybrid-test-session",
+            form_data={"scenario_type": "negotiation"},
+        )
+
+        # HYBRID should include UI tree
+        assert response.ui_tree is not None
+        assert response.voice_hints is not None
+
+
+class TestUIAgentContext:
+    """Test UI generation context building."""
+
+    def test_build_ui_context_from_normalized_input(self, orchestrator):
+        """Test _build_ui_generation_context extracts correct fields."""
+        normalized = NormalizedInput(
+            intent="session_check_in",
+            data={"energy_level": "high", "time_available": "focused"},
+            source_modality=InputModality.FORM,
+        )
+        decision = OrchestratorDecision(
+            action="process",
+            output_strategy=OutputStrategy.UI_TREE,
+            context_for_llm={"intent": "session_check_in"},
+        )
+
+        orchestrator.conversation_engine.current_mode = DialogueMode.CHECK_IN
+        context = orchestrator._build_ui_generation_context(normalized, decision)
+
+        assert context["mode"] == "check_in"
+        assert context["energy_level"] == "high"
+        assert context["time_available"] == "focused"
+        assert "session_check_in" in context.get("requirements", "")
+
+    def test_build_ui_context_minimal(self, orchestrator):
+        """Test context building with minimal input."""
+        normalized = NormalizedInput(
+            intent="general",
+            data={},
+            source_modality=InputModality.CHAT,
+        )
+        decision = OrchestratorDecision(
+            action="process",
+            output_strategy=OutputStrategy.TEXT_ONLY,
+        )
+
+        orchestrator.conversation_engine.current_mode = None
+        context = orchestrator._build_ui_generation_context(normalized, decision)
+
+        assert context["mode"] is None
+        assert "energy_level" not in context
+        assert "time_available" not in context

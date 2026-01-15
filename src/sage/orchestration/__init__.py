@@ -1,13 +1,18 @@
 """SAGE Orchestration Layer.
 
-This module handles input normalization, intent extraction, and
-orchestration of the voice/UI parity system.
+This module handles input normalization, intent extraction,
+UI generation, and orchestration of the voice/UI parity system.
 """
 
 from sage.orchestration.intent_extractor import (
     ExtractedIntent,
     INTENT_SCHEMAS,
     SemanticIntentExtractor,
+)
+from sage.orchestration.models import (
+    UIGenerationHint,
+    UIGenerationRequest,
+    UITreeSpec,
 )
 from sage.orchestration.normalizer import (
     InputModality,
@@ -19,6 +24,10 @@ from sage.orchestration.orchestrator import (
     OutputStrategy,
     SAGEOrchestrator,
 )
+from sage.orchestration.ui_agent import (
+    UIGenerationAgent,
+    create_ui_agent,
+)
 
 __all__ = [
     # Normalizer
@@ -29,6 +38,12 @@ __all__ = [
     "ExtractedIntent",
     "INTENT_SCHEMAS",
     "SemanticIntentExtractor",
+    # UI Generation
+    "UIGenerationAgent",
+    "UIGenerationHint",
+    "UIGenerationRequest",
+    "UITreeSpec",
+    "create_ui_agent",
     # Orchestrator
     "OrchestratorDecision",
     "OutputStrategy",
