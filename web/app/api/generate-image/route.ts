@@ -19,7 +19,7 @@ export interface ImageGenerationResponse {
 
 export async function POST(request: NextRequest): Promise<NextResponse<ImageGenerationResponse>> {
   try {
-    const apiKey = process.env.XAI_API_KEY || process.env.NEXT_PUBLIC_XAI_API_KEY;
+    const apiKey = process.env.XAI_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(
