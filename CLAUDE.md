@@ -177,7 +177,7 @@ Learn concept → Apply in real world → Report back → Identify gaps → Fill
 - **Framework**: Next.js 14 (App Router)
 - **Styling**: Tailwind CSS + shadcn/ui
 - **Content**: React Markdown, Mermaid.js, KaTeX
-- **Voice**: Web Speech API + OpenAI Whisper
+- **Voice**: Grok Voice API (real-time WebSocket with voice selection)
 - **Visualization**: vis-network (knowledge graph)
 
 ### LLM Configuration
@@ -211,7 +211,14 @@ client = OpenAI(
 - [x] **M4: Gap Finder complete** (probing context, gap identification, connection discovery, teaching connections)
 - [x] **M5: Assessment complete** (verification, proof creation, confidence scoring)
 - [x] **M6: Integration complete** (GapFinder/ProofHandler wired into ConversationEngine, mode-specific hints, integration tests)
-- [ ] M7: Web UI (JARVIS-like with voice, rich content, graph visualization)
+- [ ] M7: Web UI (in progress)
+  - [x] FastAPI backend with WebSocket streaming
+  - [x] Next.js frontend with chat interface
+  - [x] Grok Voice integration (real-time voice input/output)
+  - [x] Practice/roleplay mode (dynamic scenarios, feedback)
+  - [ ] Knowledge graph visualization
+  - [ ] Rich content rendering (Mermaid diagrams, KaTeX math)
+  - [ ] Progress sidebar
 
 ## Key Concepts to Remember
 
@@ -390,4 +397,4 @@ Sources:
 
 ---
 
-*Last updated: M6 Integration complete, all core backend complete. Next: M7 Web UI (JARVIS-like experience with voice)*
+*Last updated: M7 Web UI in progress. Completed: FastAPI backend, Next.js frontend, Grok Voice integration, Practice Mode. Remaining: Knowledge graph visualization, rich content rendering, progress sidebar*

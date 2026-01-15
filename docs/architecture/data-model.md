@@ -835,6 +835,7 @@ class DialogueMode(str, Enum):
     TEACHING = "teaching"                    # Filling the gap
     VERIFICATION = "verification"            # Checking understanding
     OUTCOME_CHECK = "outcome_check"          # Can they do the thing?
+    PRACTICE = "practice"                    # Roleplay practice mode
 
 
 class ExplorationDepth(str, Enum):
@@ -1009,6 +1010,34 @@ class Session(BaseModel):
     proofs_earned: list[str] = Field(default_factory=list)
     connections_found: list[str] = Field(default_factory=list)
     ending_state: Optional[SessionEndingState] = None
+
+    # Practice mode fields
+    session_type: SessionType = SessionType.LEARNING
+    practice_scenario: Optional[PracticeScenario] = None
+    practice_feedback: Optional[PracticeFeedback] = None
+
+
+class SessionType(str, Enum):
+    """Type of session"""
+    LEARNING = "learning"  # Standard learning session
+    PRACTICE = "practice"  # Roleplay practice session
+
+
+class PracticeScenario(BaseModel):
+    """Configuration for a practice roleplay scenario"""
+    scenario_id: str
+    title: str
+    description: str
+    sage_role: str    # Character SAGE plays (e.g., "skeptical client")
+    user_role: str    # Role the learner practices (e.g., "consultant")
+
+
+class PracticeFeedback(BaseModel):
+    """Feedback generated after a practice session ends"""
+    positives: list[str]        # What the learner did well
+    improvements: list[str]     # Areas to work on
+    summary: str                # Overall assessment
+    revealed_gaps: list[str] = Field(default_factory=list)  # New gaps to explore
 
 
 class ApplicationStatus(str, Enum):

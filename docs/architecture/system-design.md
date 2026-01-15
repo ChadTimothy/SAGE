@@ -646,6 +646,38 @@ SAGE/
 
 ---
 
+## Practice Mode
+
+Practice Mode enables roleplay scenarios where learners can apply what they've learned in realistic situations. SAGE plays a character role while the learner practices skills.
+
+### How It Works
+
+1. **Scenario Setup**: Learner selects or creates a practice scenario
+   - Defines SAGE's role (e.g., "skeptical client", "difficult stakeholder")
+   - Defines learner's role (e.g., "consultant", "sales representative")
+   - Sets the context/situation
+
+2. **In-Character Roleplay**: SAGE stays in character throughout
+   - Provides realistic responses and pushback
+   - Adjusts difficulty based on learner performance
+   - Tracks strengths and areas for improvement
+
+3. **Post-Practice Feedback**: When session ends, SAGE provides:
+   - What the learner did well
+   - Areas for improvement
+   - Revealed gaps to explore in future learning
+
+### Practice API Endpoints
+
+```
+POST /api/practice/start         # Start a new practice session
+POST /api/practice/{id}/message  # Send message in practice session
+POST /api/practice/{id}/hint     # Request coaching hint (breaks character)
+POST /api/practice/{id}/end      # End practice and get feedback
+```
+
+---
+
 ## Success Criteria
 
 A user can:
@@ -660,4 +692,4 @@ A user can:
 
 ---
 
-*Architecture v1.0 — Iterate Toward Outcome*
+*Architecture v1.1 — Iterate Toward Outcome (Practice Mode added)*
