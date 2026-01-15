@@ -2,11 +2,14 @@
 
 This module defines SAGEResponse - the structured output the LLM
 returns each turn - and utilities for parsing and validating it.
+
+Also includes ExtendedSAGEResponse for voice/UI parity with
+composable UI trees and voice optimization hints.
 """
 
 import logging
 from datetime import date
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -175,6 +178,120 @@ class SAGEResponse(BaseModel):
     # === DEBUG ===
     reasoning: Optional[str] = Field(
         default=None, description="Internal reasoning (debug only)"
+    )
+
+
+# =============================================================================
+# Voice/UI Parity Models (for ExtendedSAGEResponse)
+# =============================================================================
+
+
+class UITreeNode(BaseModel):
+    """A node in the composable UI component tree.
+
+    The UI tree is recursive, allowing arbitrary nesting of components.
+    The frontend renders this tree using a primitive component library.
+
+    Example:
+        UITreeNode(
+            component="Stack",
+            props={"gap": 4},
+            children=[
+                UITreeNode(component="Text", props={"content": "Hello"}),
+                UITreeNode(component="Button", props={"label": "Click me"}),
+            ]
+        )
+    """
+
+    component: str = Field(description="Primitive component name (Stack, Text, Button, etc.)")
+    props: dict[str, Any] = Field(
+        default_factory=dict, description="Component properties"
+    )
+    children: Optional[list["UITreeNode"]] = Field(
+        default=None, description="Child nodes (for container components)"
+    )
+
+
+# Resolve forward references for recursive type
+UITreeNode.model_rebuild()
+
+
+class VoiceHints(BaseModel):
+    """Hints for text-to-speech optimization.
+
+    These hints help the voice synthesizer produce more natural speech.
+    The voice_fallback provides a complete conversational alternative
+    for users who can't see the UI.
+    """
+
+    voice_fallback: Optional[str] = Field(
+        default=None, description="Full voice alternative for UI-based content"
+    )
+    emphasis: list[str] = Field(
+        default_factory=list, description="Words to emphasize in speech"
+    )
+    pause_after: list[str] = Field(
+        default_factory=list, description="Words after which to pause"
+    )
+    tone: str = Field(default="neutral", description="Suggested emotional tone")
+    slower: bool = Field(default=False, description="Request slower speech rate")
+
+
+class PendingDataRequest(BaseModel):
+    """Tracks incomplete data collection across conversation turns.
+
+    When collecting structured data (like session check-in), this tracks
+    what we've gathered so far and what's still missing. This enables:
+    - Multi-turn data collection
+    - Cross-modality state sync (voice -> UI prefill)
+    - Validation feedback
+    """
+
+    intent: str = Field(description="What we're trying to collect (e.g., 'session_check_in')")
+    collected_data: dict[str, Any] = Field(
+        default_factory=dict, description="Data collected so far"
+    )
+    missing_fields: list[str] = Field(
+        default_factory=list, description="Fields still needed"
+    )
+    validation_errors: list[str] = Field(
+        default_factory=list, description="Validation errors to show user"
+    )
+
+
+class ExtendedSAGEResponse(SAGEResponse):
+    """Enhanced SAGE response supporting voice/UI parity.
+
+    Extends SAGEResponse with:
+    - ui_tree: Composable UI tree for ad-hoc UI generation
+    - voice_hints: TTS optimization hints
+    - pending_data_request: State for multi-turn data collection
+
+    The UI Generation Agent creates ui_tree from ~15 primitive
+    components, enabling any UI to be generated dynamically.
+    """
+
+    # === UI TREE (Ad-hoc UI generation) ===
+    ui_tree: Optional[UITreeNode] = Field(
+        default=None, description="Composable UI tree for rendering"
+    )
+
+    # === VOICE HINTS ===
+    voice_hints: Optional[VoiceHints] = Field(
+        default=None, description="TTS optimization hints"
+    )
+
+    # === DATA COLLECTION STATE ===
+    pending_data_request: Optional[PendingDataRequest] = Field(
+        default=None, description="Incomplete data collection state"
+    )
+
+    # === UI METADATA ===
+    ui_purpose: Optional[str] = Field(
+        default=None, description="What the UI accomplishes"
+    )
+    estimated_interaction_time: Optional[int] = Field(
+        default=None, description="Expected seconds to complete UI interaction"
     )
 
 
