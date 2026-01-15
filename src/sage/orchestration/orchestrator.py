@@ -19,6 +19,7 @@ from sage.dialogue.conversation import ConversationEngine
 from sage.dialogue.structured_output import (
     ExtendedSAGEResponse,
     PendingDataRequest,
+    VoiceHints,
 )
 from sage.graph.learning_graph import LearningGraph
 from sage.graph.models import DialogueMode
@@ -28,6 +29,7 @@ from sage.orchestration.normalizer import (
     InputNormalizer,
     NormalizedInput,
 )
+from sage.orchestration.ui_agent import UIGenerationAgent
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,7 @@ _OUTPUT_STRATEGY_MAP: dict[tuple[str, InputModality], OutputStrategy] = {
     ("practice_setup", InputModality.FORM): OutputStrategy.UI_TREE,
     ("practice_setup", InputModality.VOICE): OutputStrategy.HYBRID,
     ("practice_setup", InputModality.CHAT): OutputStrategy.HYBRID,
+    ("practice_setup", InputModality.HYBRID): OutputStrategy.HYBRID,
     # Verification: text responses work well
     ("verification", InputModality.FORM): OutputStrategy.TEXT_ONLY,
     ("verification", InputModality.VOICE): OutputStrategy.TEXT_ONLY,
@@ -102,6 +105,7 @@ class SAGEOrchestrator:
         llm_client: OpenAI,
         *,
         extraction_model: str = "grok-3-mini",
+        ui_generation_model: str = "grok-2",
     ):
         """Initialize the orchestrator.
 
@@ -109,6 +113,7 @@ class SAGEOrchestrator:
             graph: The learning graph for data access
             llm_client: OpenAI-compatible client for LLM calls
             extraction_model: Model to use for intent extraction
+            ui_generation_model: Model to use for UI generation (default: grok-2)
         """
         self.graph = graph
         self.llm_client = llm_client
@@ -120,6 +125,10 @@ class SAGEOrchestrator:
             model=extraction_model,
         )
         self.conversation_engine = ConversationEngine(graph, llm_client)
+        self.ui_agent = UIGenerationAgent(
+            llm_client,
+            model=ui_generation_model,
+        )
 
         # Track pending data requests per session
         self._pending_requests: dict[str, PendingDataRequest] = {}
@@ -348,7 +357,32 @@ class SAGEOrchestrator:
             OutputStrategy.UI_TREE,
             OutputStrategy.HYBRID,
         )
-        ui_purpose = f"Response for {normalized.intent}" if should_include_ui else None
+
+        # Generate UI tree if needed
+        ui_tree = None
+        ui_purpose = None
+        voice_hints = None
+        estimated_interaction_time = None
+
+        if should_include_ui:
+            ui_purpose = f"Response for {normalized.intent}"
+            ui_context = self._build_ui_generation_context(normalized, decision)
+
+            try:
+                ui_spec = self.ui_agent.generate(
+                    purpose=ui_purpose,
+                    context=ui_context,
+                )
+                ui_tree = ui_spec.tree
+                ui_purpose = ui_spec.purpose
+                estimated_interaction_time = ui_spec.estimated_interaction_time
+                voice_hints = VoiceHints(
+                    voice_fallback=ui_spec.voice_fallback,
+                )
+                logger.info(f"Generated UI tree for intent: {normalized.intent}")
+            except Exception as e:
+                logger.warning(f"UI generation failed, continuing without UI: {e}")
+                # Continue without UI tree - graceful degradation
 
         return ExtendedSAGEResponse(
             message=base_response.message,
@@ -366,8 +400,37 @@ class SAGEOrchestrator:
             outcome_reasoning=base_response.outcome_reasoning,
             teaching_approach_used=base_response.teaching_approach_used,
             reasoning=base_response.reasoning,
+            ui_tree=ui_tree,
+            voice_hints=voice_hints,
             ui_purpose=ui_purpose,
+            estimated_interaction_time=estimated_interaction_time,
         )
+
+    def _build_ui_generation_context(
+        self,
+        normalized: NormalizedInput,
+        decision: OrchestratorDecision,
+    ) -> dict[str, Any]:
+        """Build context for UI generation based on normalized input and decision."""
+        context: dict[str, Any] = {
+            "mode": str(self.conversation_engine.current_mode.value)
+            if self.conversation_engine.current_mode
+            else None,
+        }
+
+        # Extract session context from data if available
+        if normalized.data:
+            if "energy_level" in normalized.data:
+                context["energy_level"] = normalized.data["energy_level"]
+            if "time_available" in normalized.data:
+                context["time_available"] = normalized.data["time_available"]
+
+        # Add requirements from decision context
+        if decision.context_for_llm:
+            if "intent" in decision.context_for_llm:
+                context["requirements"] = f"For {decision.context_for_llm['intent']} interaction"
+
+        return context
 
     def get_pending_request(self, session_id: str) -> PendingDataRequest | None:
         """Get the pending data request for a session."""
