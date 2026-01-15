@@ -372,6 +372,7 @@ class TestProcessInput:
             message="Welcome to your session!",
             current_mode=DialogueMode.CHECK_IN,
         )
+        orchestrator.conversation_engine.resume_session = MagicMock()
         orchestrator.conversation_engine.process_turn_streaming = AsyncMock(
             return_value=mock_response
         )
@@ -405,6 +406,7 @@ class TestProcessInput:
         mock_llm_client.chat.completions.create.return_value = make_mock_extraction_response(
             '{"intent": "session_check_in", "data": {"timeAvailable": "focused"}, "confidence": 0.9}'
         )
+        orchestrator.conversation_engine.resume_session = MagicMock()
         orchestrator.conversation_engine.process_turn_streaming = AsyncMock(
             return_value=SAGEResponse(
                 message="Got it, 30 minutes.",
@@ -429,6 +431,7 @@ class TestProcessInput:
         mock_llm_client.chat.completions.create.return_value = make_mock_extraction_response(
             '{"intent": "session_check_in", "data": {"energyLevel": 80}, "confidence": 0.9}'
         )
+        orchestrator.conversation_engine.resume_session = MagicMock()
         orchestrator.conversation_engine.process_turn_streaming = AsyncMock(
             return_value=SAGEResponse(
                 message="Great!",

@@ -293,6 +293,9 @@ class SAGEOrchestrator:
         on_chunk: Callable[[str], Awaitable[None]] | None,
     ) -> ExtendedSAGEResponse:
         """Process through the conversation engine."""
+        # Resume the session to load context before processing
+        self.conversation_engine.resume_session(session_id)
+
         user_message = _build_user_message(normalized)
         chunk_handler = on_chunk or _null_chunk_handler
 
