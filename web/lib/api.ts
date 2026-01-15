@@ -139,6 +139,89 @@ class ApiClient {
       method: "POST",
     });
   }
+
+  // ============================================
+  // Cross-Modality State Sync Endpoints (#81)
+  // ============================================
+
+  async getSessionState(sessionId: string): Promise<UnifiedSessionState> {
+    return this.request<UnifiedSessionState>(
+      `/api/sessions/${sessionId}/state`
+    );
+  }
+
+  async setModalityPreference(
+    sessionId: string,
+    modality: "chat" | "voice"
+  ): Promise<{ status: string; modality: string }> {
+    return this.request(`/api/sessions/${sessionId}/modality`, {
+      method: "POST",
+      body: JSON.stringify({ modality }),
+    });
+  }
+
+  async mergeCollectedData(
+    sessionId: string,
+    data: Record<string, unknown>
+  ): Promise<UnifiedSessionState> {
+    return this.request<UnifiedSessionState>(
+      `/api/sessions/${sessionId}/merge-data`,
+      {
+        method: "POST",
+        body: JSON.stringify({ data }),
+      }
+    );
+  }
+
+  async getPrefillData(
+    sessionId: string,
+    intent: string
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(
+      `/api/sessions/${sessionId}/prefill/${intent}`
+    );
+  }
+
+  async clearSessionState(
+    sessionId: string
+  ): Promise<{ status: string }> {
+    return this.request(`/api/sessions/${sessionId}/state`, {
+      method: "DELETE",
+    });
+  }
+}
+
+// Type for unified session state from backend
+export interface UnifiedSessionState {
+  session_id: string;
+  modality_preference: "chat" | "voice";
+  pending_data_request: PendingDataRequest | null;
+  check_in_data: CheckInData;
+  check_in_complete: boolean;
+  messages: TaggedMessage[];
+  voice_enabled: boolean;
+  last_activity: string;
+}
+
+export interface PendingDataRequest {
+  intent: string;
+  required_fields: string[];
+  collected_data: Record<string, unknown>;
+  voice_prompt: string;
+}
+
+export interface CheckInData {
+  energy_level: number | null;
+  time_available: string | null;
+  mindset: string | null;
+  physical_environment: string | null;
+}
+
+export interface TaggedMessage {
+  role: string;
+  content: string;
+  source_modality: "chat" | "voice";
+  timestamp: string;
 }
 
 // Export singleton instance
