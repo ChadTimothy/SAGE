@@ -85,7 +85,6 @@ export function VoiceErrorToast({
             className="text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
             aria-label="Dismiss"
           >
-            <span className="sr-only">Dismiss</span>
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>

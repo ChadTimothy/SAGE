@@ -147,8 +147,8 @@ export function useGrokVoice({
   const voiceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSpeechTimeRef = useRef<number>(0);
 
-  // Check browser support on mount
-  const browserSupport = checkBrowserSupport();
+  // Check browser support (memoized to avoid recalculation)
+  const browserSupport = useRef(checkBrowserSupport()).current;
   const isSupported = browserSupport.supported;
 
   // Set error and notify callback
@@ -184,12 +184,15 @@ export function useGrokVoice({
     }
   }, []);
 
-  // Reset voice timeout
+  // Reset voice timeout - uses statusRef to avoid stale closure
+  const statusRef = useRef(status);
+  statusRef.current = status;
+
   const resetVoiceTimeout = useCallback(() => {
     clearVoiceTimeout();
     lastSpeechTimeRef.current = Date.now();
     voiceTimeoutRef.current = setTimeout(() => {
-      if (status === "listening") {
+      if (statusRef.current === "listening") {
         handleError({
           type: "timeout",
           message: "No speech detected. Type your message instead.",
@@ -197,7 +200,7 @@ export function useGrokVoice({
         });
       }
     }, voiceTimeoutMs);
-  }, [clearVoiceTimeout, handleError, status, voiceTimeoutMs]);
+  }, [clearVoiceTimeout, handleError, voiceTimeoutMs]);
 
   // Play received audio
   const playAudio = useCallback((base64Audio: string) => {
@@ -369,29 +372,27 @@ export function useGrokVoice({
       ws.onclose = (event) => {
         wsRef.current = null;
 
-        // If we were connected and it wasn't a clean close, try to reconnect
-        if (
+        const wasActive =
           status === "connected" ||
           status === "listening" ||
-          status === "speaking"
-        ) {
-          if (!event.wasClean && reconnectAttemptsRef.current < maxReconnectAttempts) {
-            scheduleReconnect();
-            return;
-          }
+          status === "speaking";
+        const wasConnecting =
+          status === "connecting" || status === "reconnecting";
+        const canRetry = reconnectAttemptsRef.current < maxReconnectAttempts;
+
+        // Try to reconnect if connection dropped unexpectedly or initial connect failed
+        if (canRetry && ((wasActive && !event.wasClean) || wasConnecting)) {
+          scheduleReconnect();
+          return;
         }
 
-        // If connecting failed or max reconnects reached
-        if (status === "connecting" || status === "reconnecting") {
-          if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-            scheduleReconnect();
-          } else {
-            handleError({
-              type: "connection_error",
-              message: "Unable to connect to voice service.",
-              recoverable: true,
-            });
-          }
+        // Max reconnects reached while trying to connect
+        if (wasConnecting && !canRetry) {
+          handleError({
+            type: "connection_error",
+            message: "Unable to connect to voice service.",
+            recoverable: true,
+          });
           return;
         }
 
@@ -416,15 +417,8 @@ export function useGrokVoice({
     maxReconnectAttempts,
   ]);
 
-  // Public connect function
+  // Public connect function (also used for retry)
   const connect = useCallback(async () => {
-    reconnectAttemptsRef.current = 0;
-    setIsFallbackMode(false);
-    await connectInternal();
-  }, [connectInternal]);
-
-  // Retry connection
-  const retry = useCallback(async () => {
     clearError();
     reconnectAttemptsRef.current = 0;
     setIsFallbackMode(false);
@@ -611,7 +605,7 @@ export function useGrokVoice({
     };
   }, [disconnect]);
 
-  // Check browser support on mount and warn if unsupported
+  // Set fallback mode on mount if browser unsupported
   useEffect(() => {
     if (!isSupported) {
       setError({
@@ -623,14 +617,16 @@ export function useGrokVoice({
       });
       setIsFallbackMode(true);
     }
-  }, [isSupported, browserSupport.reason]);
+  }, []);
+
+  const isConnected =
+    status === "connected" ||
+    status === "listening" ||
+    status === "speaking";
 
   return {
     status,
-    isConnected:
-      status === "connected" ||
-      status === "listening" ||
-      status === "speaking",
+    isConnected,
     isListening: status === "listening",
     isSpeaking: status === "speaking",
     transcript,
@@ -646,6 +642,6 @@ export function useGrokVoice({
     isSupported,
     isFallbackMode,
     clearError,
-    retry,
+    retry: connect,
   };
 }
