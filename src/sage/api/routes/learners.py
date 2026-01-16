@@ -1,11 +1,10 @@
 """Learner API routes."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
-from sage.graph.learning_graph import LearningGraph
 from sage.graph.models import AgeGroup, Learner, LearnerProfile, SkillLevel
 
-from ..deps import get_graph
+from ..deps import Graph, User, Verifier
 from ..schemas import (
     GraphEdgeResponse,
     GraphNodeResponse,
@@ -41,25 +40,30 @@ def _learner_to_response(learner: Learner) -> LearnerResponse:
 @router.post("", response_model=LearnerResponse)
 def create_learner(
     data: LearnerCreate,
-    graph: LearningGraph = Depends(get_graph),
+    user: User,
+    graph: Graph,
 ) -> LearnerResponse:
-    """Create a new learner."""
-    profile = LearnerProfile(
-        name=data.name,
-        age_group=AgeGroup(data.age_group),
-        skill_level=SkillLevel(data.skill_level),
-    )
-    learner = Learner(profile=profile)
-    created = graph.create_learner(learner)
-    return _learner_to_response(created)
+    """Create a new learner.
+
+    Note: This endpoint is deprecated. Learners are created during registration.
+    This remains for backward compatibility but only returns the user's own learner.
+    """
+    # Users can only access their own learner (created during registration)
+    learner = graph.get_learner(user.learner_id)
+    if not learner:
+        raise HTTPException(status_code=404, detail="Learner not found")
+    return _learner_to_response(learner)
 
 
 @router.get("/{learner_id}", response_model=LearnerResponse)
 def get_learner(
     learner_id: str,
-    graph: LearningGraph = Depends(get_graph),
+    user: User,
+    graph: Graph,
+    verifier: Verifier,
 ) -> LearnerResponse:
     """Get a learner by ID."""
+    verifier.verify_learner(user, learner_id)
     learner = graph.get_learner(learner_id)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")
@@ -69,9 +73,12 @@ def get_learner(
 @router.get("/{learner_id}/state", response_model=LearnerStateResponse)
 def get_learner_state(
     learner_id: str,
-    graph: LearningGraph = Depends(get_graph),
+    user: User,
+    graph: Graph,
+    verifier: Verifier,
 ) -> LearnerStateResponse:
     """Get full learner state for UI."""
+    verifier.verify_learner(user, learner_id)
     learner = graph.get_learner(learner_id)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")
@@ -135,9 +142,12 @@ def get_learner_state(
 @router.get("/{learner_id}/outcomes", response_model=list[OutcomeResponse])
 def get_learner_outcomes(
     learner_id: str,
-    graph: LearningGraph = Depends(get_graph),
+    user: User,
+    graph: Graph,
+    verifier: Verifier,
 ) -> list[OutcomeResponse]:
     """Get outcomes for a learner."""
+    verifier.verify_learner(user, learner_id)
     learner = graph.get_learner(learner_id)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")
@@ -159,9 +169,12 @@ def get_learner_outcomes(
 @router.get("/{learner_id}/proofs", response_model=list[ProofResponse])
 def get_learner_proofs(
     learner_id: str,
-    graph: LearningGraph = Depends(get_graph),
+    user: User,
+    graph: Graph,
+    verifier: Verifier,
 ) -> list[ProofResponse]:
     """Get proofs for a learner."""
+    verifier.verify_learner(user, learner_id)
     learner = graph.get_learner(learner_id)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")
@@ -183,9 +196,12 @@ def get_learner_proofs(
 @router.get("/{learner_id}/graph", response_model=GraphResponse)
 def get_learner_graph(
     learner_id: str,
-    graph: LearningGraph = Depends(get_graph),
+    user: User,
+    graph: Graph,
+    verifier: Verifier,
 ) -> GraphResponse:
     """Get knowledge graph data for visualization."""
+    verifier.verify_learner(user, learner_id)
     learner = graph.get_learner(learner_id)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")

@@ -11,6 +11,9 @@ from sage.dialogue.conversation import ConversationEngine
 from sage.dialogue.structured_output import SAGEResponse
 from sage.graph.learning_graph import LearningGraph
 
+from ..auth import get_current_user_ws
+from ..guards import OwnershipVerifier
+
 logger = logging.getLogger(__name__)
 
 
@@ -131,23 +134,35 @@ async def websocket_chat(
     websocket: WebSocket,
     session_id: str,
 ) -> None:
-    """WebSocket endpoint for streaming chat."""
+    """WebSocket endpoint for streaming chat.
+
+    Authentication via query parameter: ?token=xxx
+    """
     settings = get_settings()
     graph = LearningGraph(settings.db_path)
 
+    # Authenticate user from query param token
+    try:
+        user = await get_current_user_ws(websocket)
+    except Exception:
+        return  # Connection already closed by get_current_user_ws
+
+    # Verify session ownership
+    verifier = OwnershipVerifier(graph)
     session = graph.get_session(session_id)
-    if not session:
-        # Auto-create session for development/testing
-        # TODO: Remove this once frontend properly creates sessions (Issue #61)
+
+    if session:
+        # Verify user owns this session
+        if session.learner_id != user.learner_id:
+            await websocket.close(code=4003, reason="Access denied: not your session")
+            return
+    else:
+        # Auto-create session for the authenticated user's learner
         from sage.graph.models import Session
 
-        # Get or create default learner
-        learner = graph.get_or_create_learner()
-
-        # Create session with the provided ID
-        session = Session(id=session_id, learner_id=learner.id)
+        session = Session(id=session_id, learner_id=user.learner_id)
         session = graph.create_session(session)
-        logger.info(f"Auto-created session {session_id} for learner {learner.id}")
+        logger.info(f"Auto-created session {session_id} for learner {user.learner_id}")
 
     await manager.connect(session_id, websocket)
     logger.info(f"WebSocket connected for session {session_id}")

@@ -624,6 +624,47 @@ class LearningGraph:
         return edge
 
     # =========================================================================
+    # User Operations (Authentication)
+    # =========================================================================
+
+    def create_user(
+        self,
+        user_id: str,
+        learner_id: str,
+        email: Optional[str] = None,
+        name: Optional[str] = None,
+        provider: str = "credentials",
+        password_hash: Optional[str] = None,
+        password_salt: Optional[str] = None,
+    ) -> dict:
+        """Create a user linked to a learner."""
+        return self._store.create_user(
+            user_id=user_id,
+            learner_id=learner_id,
+            email=email,
+            name=name,
+            provider=provider,
+            password_hash=password_hash,
+            password_salt=password_salt,
+        )
+
+    def get_user(self, user_id: str) -> Optional[dict]:
+        """Get user by ID."""
+        return self._store.get_user(user_id)
+
+    def get_user_by_email(self, email: str) -> Optional[dict]:
+        """Get user by email."""
+        return self._store.get_user_by_email(email)
+
+    def get_user_by_learner(self, learner_id: str) -> Optional[dict]:
+        """Get user by learner ID."""
+        return self._store.get_user_by_learner(learner_id)
+
+    def update_user_last_login(self, user_id: str) -> None:
+        """Update last login timestamp."""
+        self._store.update_user_last_login(user_id)
+
+    # =========================================================================
     # Semantic Search Operations (requires embeddings module)
     # =========================================================================
 

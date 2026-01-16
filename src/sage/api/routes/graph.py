@@ -2,12 +2,14 @@
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from openai import OpenAI
 from pydantic import BaseModel
 
 from sage.core.config import get_settings
 from sage.orchestration.intent_extractor import SemanticIntentExtractor
+
+from ..auth import CurrentUser, get_current_user
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 
@@ -27,7 +29,10 @@ class FilterResponse(BaseModel):
 
 
 @router.post("/extract-filters", response_model=FilterResponse)
-async def extract_filters(request: FilterRequest) -> FilterResponse:
+async def extract_filters(
+    request: FilterRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> FilterResponse:
     """Extract graph filter intent from natural language text.
 
     Used by the graph page to interpret voice commands like:

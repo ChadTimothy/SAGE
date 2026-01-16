@@ -286,6 +286,42 @@ class PracticeScenario(BaseModel):
     related_concepts: list[str] = Field(default_factory=list)  # Concept IDs
 
 
+class ScenarioDifficulty(str, Enum):
+    """Difficulty level for practice scenarios."""
+
+    EASY = "easy"  # Cooperative, minimal pushback
+    MEDIUM = "medium"  # Standard objections
+    HARD = "hard"  # Challenging, aggressive tactics
+
+
+class StoredScenario(BaseModel):
+    """Practice scenario stored in database."""
+
+    id: str = Field(default_factory=gen_id)
+    title: str
+    description: Optional[str] = None
+    sage_role: str
+    user_role: str
+    category: Optional[str] = None  # "sales", "interview", "presentation"
+    difficulty: ScenarioDifficulty = ScenarioDifficulty.MEDIUM
+    related_concepts: list[str] = Field(default_factory=list)
+    is_preset: bool = False  # True for built-in scenarios
+    learner_id: Optional[str] = None  # None for preset, set for custom
+    created_at: datetime = Field(default_factory=datetime.now)
+    times_used: int = 0
+
+    def to_practice_scenario(self) -> PracticeScenario:
+        """Convert to PracticeScenario for use in sessions."""
+        return PracticeScenario(
+            scenario_id=self.id,
+            title=self.title,
+            description=self.description,
+            sage_role=self.sage_role,
+            user_role=self.user_role,
+            related_concepts=self.related_concepts,
+        )
+
+
 class PracticeFeedback(BaseModel):
     """LLM-generated feedback after practice."""
 

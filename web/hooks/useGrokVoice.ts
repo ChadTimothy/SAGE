@@ -12,6 +12,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { VoiceErrorType, VoiceError } from "@/components/voice/VoiceErrorToast";
+import { getAuthToken } from "@/lib/auth";
 
 export type GrokVoice = "ara" | "rex" | "sal" | "eve" | "leo";
 export type VoiceStatus =
@@ -60,7 +61,13 @@ export interface UseGrokVoiceReturn {
 
 // Configuration
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
-const getVoiceUrl = (sessionId: string) => `${WS_BASE}/api/voice/${sessionId}`;
+const getVoiceUrl = (sessionId: string, token?: string | null) => {
+  let url = `${WS_BASE}/api/voice/${sessionId}`;
+  if (token) {
+    url += `?token=${encodeURIComponent(token)}`;
+  }
+  return url;
+};
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 3;
 const DEFAULT_VOICE_TIMEOUT_MS = 10000;
 const BASE_RECONNECT_DELAY_MS = 1000;
@@ -350,7 +357,9 @@ export function useGrokVoice({
       setStatus("connecting");
       clearError();
 
-      const ws = new WebSocket(getVoiceUrl(sessionId));
+      // Get auth token for WebSocket connection
+      const token = await getAuthToken();
+      const ws = new WebSocket(getVoiceUrl(sessionId, token));
 
       ws.onopen = () => {
         ws.send(JSON.stringify({ voice: currentVoice }));

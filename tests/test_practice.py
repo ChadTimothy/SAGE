@@ -1,34 +1,24 @@
-"""Tests for practice mode API endpoints and models."""
+"""Tests for practice mode API endpoints and models.
+
+Note: Common fixtures (test_graph, client, test_learner, auth_headers) come from conftest.py.
+"""
 
 import pytest
 from unittest.mock import MagicMock, patch
-from fastapi.testclient import TestClient
 
-from sage.api.main import app
-from sage.graph.learning_graph import LearningGraph
 from sage.graph.models import (
-    AgeGroup,
-    Learner,
-    LearnerProfile,
     Message,
     PracticeFeedback,
     PracticeScenario,
     Session,
     SessionType,
-    SkillLevel,
 )
+from tests.conftest import create_test_token
 
 
 # =============================================================================
-# Fixtures
+# Practice-specific Fixtures
 # =============================================================================
-
-
-@pytest.fixture
-def test_graph(tmp_path):
-    """Create test graph with temp database."""
-    db_path = tmp_path / "test_practice.db"
-    return LearningGraph(str(db_path))
 
 
 @pytest.fixture
@@ -66,31 +56,6 @@ def mock_hint_response():
     mock_response = MagicMock()
     mock_response.choices = [mock_choice]
     return mock_response
-
-
-@pytest.fixture
-def client(test_graph, mock_openai_response):
-    """Create test client with mocked dependencies."""
-    from sage.api.deps import get_graph
-
-    def override_get_graph():
-        yield test_graph
-
-    app.dependency_overrides[get_graph] = override_get_graph
-    yield TestClient(app)
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def test_learner(test_graph):
-    """Create test learner."""
-    profile = LearnerProfile(
-        name="Practice Test Learner",
-        age_group=AgeGroup.ADULT,
-        skill_level=SkillLevel.INTERMEDIATE,
-    )
-    learner = Learner(profile=profile)
-    return test_graph.create_learner(learner)
 
 
 @pytest.fixture
@@ -272,7 +237,7 @@ class TestPracticeStartEndpoint:
     @patch("sage.api.routes.practice._get_llm_client")
     @patch("sage.api.routes.practice._get_graph")
     def test_start_practice_success(
-        self, mock_get_graph, mock_get_client, test_graph, mock_openai_response
+        self, mock_get_graph, mock_get_client, client, test_graph, test_learner, auth_headers, mock_openai_response
     ):
         """Test starting a practice session."""
         mock_get_graph.return_value = test_graph
@@ -280,9 +245,9 @@ class TestPracticeStartEndpoint:
         mock_client.chat.completions.create.return_value = mock_openai_response
         mock_get_client.return_value = mock_client
 
-        client = TestClient(app)
         response = client.post(
             "/api/practice/start",
+            headers=auth_headers,
             json={
                 "scenario_id": "pricing-101",
                 "title": "Pricing Negotiation",
@@ -301,7 +266,7 @@ class TestPracticeStartEndpoint:
     @patch("sage.api.routes.practice._get_llm_client")
     @patch("sage.api.routes.practice._get_graph")
     def test_start_practice_with_learner_id(
-        self, mock_get_graph, mock_get_client, test_graph, test_learner, mock_openai_response
+        self, mock_get_graph, mock_get_client, client, test_graph, test_learner, auth_headers, mock_openai_response
     ):
         """Test starting practice with existing learner."""
         mock_get_graph.return_value = test_graph
@@ -309,22 +274,21 @@ class TestPracticeStartEndpoint:
         mock_client.chat.completions.create.return_value = mock_openai_response
         mock_get_client.return_value = mock_client
 
-        client = TestClient(app)
         response = client.post(
             "/api/practice/start",
+            headers=auth_headers,
             json={
                 "scenario_id": "test-scenario",
                 "title": "Test Practice",
                 "sage_role": "Test Role",
                 "user_role": "Test User",
-                "learner_id": test_learner.id,
             },
         )
 
         assert response.status_code == 200
         data = response.json()
 
-        # Verify session was created with correct learner
+        # Verify session was created with correct learner (from auth token)
         session = test_graph.get_session(data["session_id"])
         assert session.learner_id == test_learner.id
 
@@ -335,7 +299,7 @@ class TestPracticeMessageEndpoint:
     @patch("sage.api.routes.practice._get_llm_client")
     @patch("sage.api.routes.practice._get_graph")
     def test_send_message_success(
-        self, mock_get_graph, mock_get_client, test_graph, practice_session, mock_openai_response
+        self, mock_get_graph, mock_get_client, client, test_graph, auth_headers, practice_session, mock_openai_response
     ):
         """Test sending a message in practice mode."""
         mock_get_graph.return_value = test_graph
@@ -343,9 +307,9 @@ class TestPracticeMessageEndpoint:
         mock_client.chat.completions.create.return_value = mock_openai_response
         mock_get_client.return_value = mock_client
 
-        client = TestClient(app)
         response = client.post(
             f"/api/practice/{practice_session.id}/message",
+            headers=auth_headers,
             json={"content": "I'd like to discuss my rate of $150/hour."},
         )
 
@@ -358,13 +322,13 @@ class TestPracticeMessageEndpoint:
         assert len(updated_session.messages) == 3  # initial + user + response
 
     @patch("sage.api.routes.practice._get_graph")
-    def test_send_message_invalid_session(self, mock_get_graph, test_graph):
+    def test_send_message_invalid_session(self, mock_get_graph, client, test_graph, auth_headers):
         """Test sending message to non-existent session."""
         mock_get_graph.return_value = test_graph
 
-        client = TestClient(app)
         response = client.post(
             "/api/practice/nonexistent-session/message",
+            headers=auth_headers,
             json={"content": "Hello"},
         )
 
@@ -372,14 +336,14 @@ class TestPracticeMessageEndpoint:
 
     @patch("sage.api.routes.practice._get_graph")
     def test_send_message_wrong_session_type(
-        self, mock_get_graph, test_graph, learning_session
+        self, mock_get_graph, client, test_graph, auth_headers, learning_session
     ):
         """Test sending message to non-practice session."""
         mock_get_graph.return_value = test_graph
 
-        client = TestClient(app)
         response = client.post(
             f"/api/practice/{learning_session.id}/message",
+            headers=auth_headers,
             json={"content": "Hello"},
         )
 
@@ -393,7 +357,7 @@ class TestPracticeHintEndpoint:
     @patch("sage.api.routes.practice._get_llm_client")
     @patch("sage.api.routes.practice._get_graph")
     def test_get_hint_success(
-        self, mock_get_graph, mock_get_client, test_graph, practice_session, mock_hint_response
+        self, mock_get_graph, mock_get_client, client, test_graph, auth_headers, practice_session, mock_hint_response
     ):
         """Test getting a hint during practice."""
         mock_get_graph.return_value = test_graph
@@ -401,8 +365,7 @@ class TestPracticeHintEndpoint:
         mock_client.chat.completions.create.return_value = mock_hint_response
         mock_get_client.return_value = mock_client
 
-        client = TestClient(app)
-        response = client.post(f"/api/practice/{practice_session.id}/hint")
+        response = client.post(f"/api/practice/{practice_session.id}/hint", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -410,12 +373,11 @@ class TestPracticeHintEndpoint:
         assert data["hint"] == "Try addressing their concern directly."
 
     @patch("sage.api.routes.practice._get_graph")
-    def test_get_hint_invalid_session(self, mock_get_graph, test_graph):
+    def test_get_hint_invalid_session(self, mock_get_graph, client, test_graph, auth_headers):
         """Test getting hint for non-existent session."""
         mock_get_graph.return_value = test_graph
 
-        client = TestClient(app)
-        response = client.post("/api/practice/nonexistent/hint")
+        response = client.post("/api/practice/nonexistent/hint", headers=auth_headers)
 
         assert response.status_code == 404
 
@@ -426,7 +388,7 @@ class TestPracticeEndEndpoint:
     @patch("sage.api.routes.practice._get_llm_client")
     @patch("sage.api.routes.practice._get_graph")
     def test_end_practice_success(
-        self, mock_get_graph, mock_get_client, test_graph, practice_session, mock_feedback_response
+        self, mock_get_graph, mock_get_client, client, test_graph, auth_headers, practice_session, mock_feedback_response
     ):
         """Test ending a practice session."""
         mock_get_graph.return_value = test_graph
@@ -434,8 +396,7 @@ class TestPracticeEndEndpoint:
         mock_client.chat.completions.create.return_value = mock_feedback_response
         mock_get_client.return_value = mock_client
 
-        client = TestClient(app)
-        response = client.post(f"/api/practice/{practice_session.id}/end")
+        response = client.post(f"/api/practice/{practice_session.id}/end", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -449,7 +410,7 @@ class TestPracticeEndEndpoint:
     @patch("sage.api.routes.practice._get_llm_client")
     @patch("sage.api.routes.practice._get_graph")
     def test_end_practice_stores_feedback(
-        self, mock_get_graph, mock_get_client, test_graph, practice_session, mock_feedback_response
+        self, mock_get_graph, mock_get_client, client, test_graph, auth_headers, practice_session, mock_feedback_response
     ):
         """Test that ending practice stores feedback in session."""
         mock_get_graph.return_value = test_graph
@@ -457,8 +418,7 @@ class TestPracticeEndEndpoint:
         mock_client.chat.completions.create.return_value = mock_feedback_response
         mock_get_client.return_value = mock_client
 
-        client = TestClient(app)
-        client.post(f"/api/practice/{practice_session.id}/end")
+        client.post(f"/api/practice/{practice_session.id}/end", headers=auth_headers)
 
         # Verify feedback was stored
         updated_session = test_graph.get_session(practice_session.id)
@@ -468,7 +428,7 @@ class TestPracticeEndEndpoint:
     @patch("sage.api.routes.practice._get_llm_client")
     @patch("sage.api.routes.practice._get_graph")
     def test_end_practice_fallback_on_parse_error(
-        self, mock_get_graph, mock_get_client, test_graph, practice_session
+        self, mock_get_graph, mock_get_client, client, test_graph, auth_headers, practice_session
     ):
         """Test fallback when LLM returns invalid JSON."""
         mock_get_graph.return_value = test_graph
@@ -482,8 +442,7 @@ class TestPracticeEndEndpoint:
         mock_client.chat.completions.create.return_value = mock_response
         mock_get_client.return_value = mock_client
 
-        client = TestClient(app)
-        response = client.post(f"/api/practice/{practice_session.id}/end")
+        response = client.post(f"/api/practice/{practice_session.id}/end", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -491,12 +450,11 @@ class TestPracticeEndEndpoint:
         assert "You completed the practice session" in data["positives"]
 
     @patch("sage.api.routes.practice._get_graph")
-    def test_end_practice_invalid_session(self, mock_get_graph, test_graph):
+    def test_end_practice_invalid_session(self, mock_get_graph, client, test_graph, auth_headers):
         """Test ending non-existent session."""
         mock_get_graph.return_value = test_graph
 
-        client = TestClient(app)
-        response = client.post("/api/practice/nonexistent/end")
+        response = client.post("/api/practice/nonexistent/end", headers=auth_headers)
 
         assert response.status_code == 404
 
@@ -512,19 +470,18 @@ class TestPracticeFlow:
     @patch("sage.api.routes.practice._get_llm_client")
     @patch("sage.api.routes.practice._get_graph")
     def test_complete_practice_flow(
-        self, mock_get_graph, mock_get_client, test_graph, mock_openai_response, mock_feedback_response
+        self, mock_get_graph, mock_get_client, client, test_graph, test_learner, auth_headers, mock_openai_response, mock_feedback_response
     ):
         """Test a complete practice session from start to end."""
         mock_get_graph.return_value = test_graph
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        client = TestClient(app)
-
         # 1. Start practice
         mock_client.chat.completions.create.return_value = mock_openai_response
         start_response = client.post(
             "/api/practice/start",
+            headers=auth_headers,
             json={
                 "scenario_id": "flow-test",
                 "title": "Complete Flow Test",
@@ -539,6 +496,7 @@ class TestPracticeFlow:
         for i in range(2):
             msg_response = client.post(
                 f"/api/practice/{session_id}/message",
+                headers=auth_headers,
                 json={"content": f"Test message {i}"},
             )
             assert msg_response.status_code == 200
@@ -550,12 +508,12 @@ class TestPracticeFlow:
         hint_response_mock.choices = [hint_choice]
         mock_client.chat.completions.create.return_value = hint_response_mock
 
-        hint_response = client.post(f"/api/practice/{session_id}/hint")
+        hint_response = client.post(f"/api/practice/{session_id}/hint", headers=auth_headers)
         assert hint_response.status_code == 200
 
         # 4. End practice
         mock_client.chat.completions.create.return_value = mock_feedback_response
-        end_response = client.post(f"/api/practice/{session_id}/end")
+        end_response = client.post(f"/api/practice/{session_id}/end", headers=auth_headers)
         assert end_response.status_code == 200
 
         feedback = end_response.json()

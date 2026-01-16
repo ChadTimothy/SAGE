@@ -3,10 +3,9 @@
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from sage.graph.learning_graph import LearningGraph
 from sage.graph.models import Session
 from sage.orchestration.normalizer import InputModality
 from sage.orchestration.session_state import (
@@ -14,7 +13,7 @@ from sage.orchestration.session_state import (
     session_state_manager,
 )
 
-from ..deps import get_graph
+from ..deps import Graph, User, Verifier
 from ..schemas import SessionCreate, SessionEndRequest, SessionResponse
 
 
@@ -47,9 +46,14 @@ def _session_to_response(session: Session) -> SessionResponse:
 @router.post("", response_model=SessionResponse)
 def create_session(
     data: SessionCreate,
-    graph: LearningGraph = Depends(get_graph),
+    user: User,
+    graph: Graph,
+    verifier: Verifier,
 ) -> SessionResponse:
     """Start a new session."""
+    # Verify user owns the learner
+    verifier.verify_learner(user, data.learner_id)
+
     learner = graph.get_learner(data.learner_id)
     if not learner:
         raise HTTPException(status_code=404, detail="Learner not found")
@@ -66,9 +70,12 @@ def create_session(
 @router.get("/{session_id}", response_model=SessionResponse)
 def get_session(
     session_id: str,
-    graph: LearningGraph = Depends(get_graph),
+    user: User,
+    graph: Graph,
+    verifier: Verifier,
 ) -> SessionResponse:
     """Get a session by ID."""
+    verifier.verify_session(user, session_id)
     session = graph.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -79,9 +86,12 @@ def get_session(
 def end_session(
     session_id: str,
     data: SessionEndRequest,
-    graph: LearningGraph = Depends(get_graph),
+    user: User,
+    graph: Graph,
+    verifier: Verifier,
 ) -> SessionResponse:
     """End a session."""
+    verifier.verify_session(user, session_id)
     session = graph.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -102,7 +112,11 @@ def end_session(
 
 
 @router.get("/{session_id}/state", response_model=UnifiedSessionState)
-def get_session_state(session_id: str) -> UnifiedSessionState:
+def get_session_state(
+    session_id: str,
+    user: User,
+    verifier: Verifier,
+) -> UnifiedSessionState:
     """Get current unified session state for frontend sync.
 
     Returns the complete state including:
@@ -114,6 +128,7 @@ def get_session_state(session_id: str) -> UnifiedSessionState:
     This enables the frontend to restore state after page refresh
     or when switching between modalities.
     """
+    verifier.verify_session(user, session_id)
     return session_state_manager.get_or_create(session_id)
 
 
@@ -121,11 +136,14 @@ def get_session_state(session_id: str) -> UnifiedSessionState:
 def set_modality_preference(
     session_id: str,
     request: ModalityPreferenceRequest,
+    user: User,
+    verifier: Verifier,
 ) -> dict[str, str]:
     """Update user's modality preference.
 
     Called when user explicitly switches between voice and UI modes.
     """
+    verifier.verify_session(user, session_id)
     state = session_state_manager.get_or_create(session_id)
     state.set_modality_preference(request.modality)
     session_state_manager.update(session_id, state)
@@ -137,12 +155,15 @@ def set_modality_preference(
 def merge_collected_data(
     session_id: str,
     request: MergeDataRequest,
+    user: User,
+    verifier: Verifier,
 ) -> UnifiedSessionState:
     """Merge collected data from one modality into the unified state.
 
     Called when partial data is collected via voice or UI to ensure
     it's available when switching to the other modality.
     """
+    verifier.verify_session(user, session_id)
     state = session_state_manager.get_or_create(session_id)
     state.merge_collected_data(request.data)
     session_state_manager.update(session_id, state)
@@ -154,12 +175,15 @@ def merge_collected_data(
 def get_prefill_data(
     session_id: str,
     intent: str,
+    user: User,
+    verifier: Verifier,
 ) -> dict[str, Any]:
     """Get data to prefill UI forms based on intent.
 
     When a user switches from voice to UI, this provides the
     already-collected data to prefill the form.
     """
+    verifier.verify_session(user, session_id)
     state = session_state_manager.get(session_id)
     if not state:
         return {}
@@ -168,7 +192,12 @@ def get_prefill_data(
 
 
 @router.delete("/{session_id}/state")
-def clear_session_state(session_id: str) -> dict[str, str]:
+def clear_session_state(
+    session_id: str,
+    user: User,
+    verifier: Verifier,
+) -> dict[str, str]:
     """Clear session state (for logout or session end)."""
+    verifier.verify_session(user, session_id)
     session_state_manager.delete(session_id)
     return {"status": "ok"}
