@@ -52,3 +52,6 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "performance: marks tests as performance tests (may be slow)",
+]
