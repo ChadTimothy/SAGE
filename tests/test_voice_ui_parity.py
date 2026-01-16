@@ -6,16 +6,8 @@ Part of #82 - Integration Testing & Voice/UI Parity Verification
 """
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
-from datetime import datetime
 
 from sage.graph.models import SessionContext, EnergyLevel
-
-
-@pytest.fixture
-def mock_client():
-    """Create mock OpenAI client."""
-    return MagicMock()
 
 
 class TestVoiceUIEquivalence:
@@ -121,17 +113,12 @@ class TestModalitySwitching:
 
     def test_form_can_override_voice_data(self):
         """Form submission can correct voice-parsed data."""
-        voice_data = {
-            "energy": "high",  # Voice might misinterpret
-        }
+        voice_data = {"energy": "high"}  # Voice might misinterpret
+        form_data = {"energy": "low"}  # User corrects via form
 
-        form_data = {
-            "energy": "low",  # User corrects via form
-        }
-
-        # Form should take precedence for explicit corrections
-        final_energy = form_data["energy"]
-        assert final_energy == "low"
+        # Form takes precedence for explicit corrections
+        merged = {**voice_data, **form_data}
+        assert merged["energy"] == "low"
 
 
 class TestPracticeSetupParity:
@@ -189,19 +176,13 @@ class TestVerificationParity:
 
     def test_explanation_answer_formats(self):
         """Free-form explanation answers work from both modalities."""
-        # Form textarea
-        form_explanation = {
-            "explanation": "Anchor pricing is about starting high to set expectations"
-        }
-
-        # Voice transcription
+        form_explanation = "Anchor pricing is about starting high to set expectations"
         voice_explanation = "anchor pricing is about starting high to set expectations"
 
-        # Both should contain key concepts
-        assert "anchor" in form_explanation["explanation"].lower()
-        assert "anchor" in voice_explanation.lower()
-        assert "high" in form_explanation["explanation"].lower()
-        assert "high" in voice_explanation.lower()
+        # Both capture same key concepts regardless of modality
+        for explanation in [form_explanation, voice_explanation]:
+            assert "anchor" in explanation.lower()
+            assert "high" in explanation.lower()
 
 
 class TestApplicationEventParity:
@@ -244,19 +225,12 @@ class TestDataStructureAlignment:
     """Tests that data structures align across modalities."""
 
     def test_session_context_from_form(self):
-        """SessionContext can be created from form data."""
-        form_data = {
-            "time_available": "quick",
-            "energy": "medium",
-            "mindset": "curious",
-            "environment": "quiet office",
-        }
-
+        """SessionContext can be created from form data with correct types."""
         context = SessionContext(
-            time_available=form_data["time_available"],
-            energy=EnergyLevel(form_data["energy"]),
-            mindset=form_data["mindset"],
-            environment=form_data.get("environment"),
+            time_available="quick",
+            energy=EnergyLevel.MEDIUM,
+            mindset="curious",
+            environment="quiet office",
         )
 
         assert context.time_available == "quick"
@@ -264,15 +238,7 @@ class TestDataStructureAlignment:
         assert context.mindset == "curious"
         assert context.environment == "quiet office"
 
-    def test_session_context_field_types(self):
-        """SessionContext field types are consistent."""
-        context = SessionContext(
-            time_available="focused",
-            energy=EnergyLevel.HIGH,
-            mindset="test mindset",
-        )
-
-        # Type checks
+        # Verify field types are correct
         assert isinstance(context.time_available, str)
         assert isinstance(context.energy, EnergyLevel)
         assert isinstance(context.mindset, str)
@@ -290,10 +256,9 @@ class TestDataStructureAlignment:
             "continue",
         ]
 
-        # All actions should be lowercase with underscores
         for action in standard_actions:
             assert action.islower() or "_" in action
-            assert " " not in action  # No spaces
+            assert " " not in action
 
 
 class TestVoiceFallbackUsability:
