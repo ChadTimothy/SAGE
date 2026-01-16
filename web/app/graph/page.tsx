@@ -3,11 +3,12 @@
 import { useState, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { Network, ZoomIn, ZoomOut, RefreshCw } from "lucide-react";
-import { NodeDetailPanel, GraphFilters } from "@/components/graph";
+import { NodeDetailPanel, GraphFilters, VoiceCommandInput } from "@/components/graph";
 import type {
   KnowledgeNode,
   KnowledgeEdge,
   GraphFilterState,
+  GraphFilterUpdate,
   OutcomeSnapshot,
 } from "@/types";
 
@@ -122,10 +123,35 @@ export default function GraphPage(): JSX.Element {
     showProvenOnly: false,
     showConcepts: true,
     showOutcomes: true,
+    textFilter: "",
   });
 
-  const filteredNodes = useMemo(() => {
-    return MOCK_NODES.filter((node) => {
+  const handleVoiceFilterUpdate = useCallback(function handleVoiceFilterUpdate(
+    update: GraphFilterUpdate
+  ) {
+    if (update.resetFilters) {
+      setFilters({
+        selectedOutcome: null,
+        showProvenOnly: false,
+        showConcepts: true,
+        showOutcomes: true,
+        textFilter: "",
+      });
+      return;
+    }
+
+    setFilters(function applyUpdate(prev) {
+      const next = { ...prev };
+      if (update.showProvenOnly !== undefined) next.showProvenOnly = update.showProvenOnly;
+      if (update.showConcepts !== undefined) next.showConcepts = update.showConcepts;
+      if (update.showOutcomes !== undefined) next.showOutcomes = update.showOutcomes;
+      if (update.textFilter !== undefined) next.textFilter = update.textFilter;
+      return next;
+    });
+  }, []);
+
+  const filteredNodes = useMemo(function computeFilteredNodes() {
+    return MOCK_NODES.filter(function filterNode(node) {
       if (node.type === "outcome" && !filters.showOutcomes) return false;
       if (node.type === "concept" && !filters.showConcepts) return false;
       if (filters.showProvenOnly && node.status !== "proven" && node.status !== "achieved") {
@@ -135,26 +161,31 @@ export default function GraphPage(): JSX.Element {
         if (node.type === "outcome") {
           return node.id === filters.selectedOutcome;
         }
-        const relatedEdges = MOCK_EDGES.filter(
+        return MOCK_EDGES.some(
           (e) => e.from === filters.selectedOutcome && e.to === node.id
         );
-        return relatedEdges.length > 0;
+      }
+      if (filters.textFilter) {
+        const searchTerm = filters.textFilter.toLowerCase();
+        const matchesLabel = node.label.toLowerCase().includes(searchTerm);
+        const matchesDescription = node.description?.toLowerCase().includes(searchTerm);
+        return matchesLabel || matchesDescription;
       }
       return true;
     });
   }, [filters]);
 
-  const filteredEdges = useMemo(() => {
+  const filteredEdges = useMemo(function computeFilteredEdges() {
     const nodeIds = new Set(filteredNodes.map((n) => n.id));
     return MOCK_EDGES.filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to));
   }, [filteredNodes]);
 
-  const handleNodeClick = useCallback((nodeId: string) => {
+  const handleNodeClick = useCallback(function handleNodeClick(nodeId: string) {
     const node = MOCK_NODES.find((n) => n.id === nodeId);
-    setSelectedNode(node || null);
+    setSelectedNode(node ?? null);
   }, []);
 
-  const handleClosePanel = useCallback(() => {
+  const handleClosePanel = useCallback(function handleClosePanel() {
     setSelectedNode(null);
   }, []);
 
@@ -185,12 +216,13 @@ export default function GraphPage(): JSX.Element {
       </header>
 
       {hasData && (
-        <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+        <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 space-y-3">
           <GraphFilters
             filters={filters}
             outcomes={MOCK_OUTCOMES}
             onFilterChange={setFilters}
           />
+          <VoiceCommandInput onFilterUpdate={handleVoiceFilterUpdate} />
         </div>
       )}
 

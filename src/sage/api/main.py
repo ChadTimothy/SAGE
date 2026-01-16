@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import chat_router, learners_router, practice_router, sessions_router, voice_router
+from .routes import chat_router, graph_router, learners_router, practice_router, sessions_router, voice_router
 
 app = FastAPI(
     title="SAGE API",
@@ -30,6 +30,7 @@ app.add_middleware(
 app.include_router(learners_router)
 app.include_router(sessions_router)
 app.include_router(chat_router)
+app.include_router(graph_router)
 app.include_router(practice_router)
 app.include_router(voice_router)
 

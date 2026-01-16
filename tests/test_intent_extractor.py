@@ -91,6 +91,19 @@ class TestIntentSchemas:
         assert "goal" in schema["optional"]
         assert "motivation" in schema["optional"]
 
+    def test_filter_graph_schema(self):
+        """Test filter_graph schema structure."""
+        schema = INTENT_SCHEMAS["filter_graph"]
+        assert schema["required"] == []  # All fields optional
+        assert "show_proven_only" in schema["optional"]
+        assert "show_concepts" in schema["optional"]
+        assert "show_outcomes" in schema["optional"]
+        assert "text_filter" in schema["optional"]
+        assert "reset_filters" in schema["optional"]
+        # Check mappings exist for boolean fields
+        assert schema["extraction_hints"]["show_proven_only"]["type"] == "boolean"
+        assert schema["extraction_hints"]["reset_filters"]["type"] == "boolean"
+
     def test_all_schemas_have_required_keys(self):
         """Test all schemas have required structure."""
         required_keys = {"description", "required", "optional", "extraction_hints"}
@@ -304,6 +317,75 @@ class TestSemanticIntentExtractor:
         assert result.intent == "verification"
         assert "Start high" in result.data["answer"]
         assert result.data_complete is True  # answer is present
+
+    def test_extract_sync_filter_graph_show_proven(self, extractor, mock_client):
+        """Test extraction for filter_graph show proven only."""
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content='{"intent": "filter_graph", "data": {"show_proven_only": true}, "confidence": 0.9}'
+                )
+            )
+        ]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        result = extractor.extract_sync("show only proven concepts")
+
+        assert result.intent == "filter_graph"
+        assert result.data["show_proven_only"] is True
+        assert result.data_complete is True  # No required fields
+
+    def test_extract_sync_filter_graph_hide_outcomes(self, extractor, mock_client):
+        """Test extraction for filter_graph hide outcomes."""
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content='{"intent": "filter_graph", "data": {"show_outcomes": false}, "confidence": 0.85}'
+                )
+            )
+        ]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        result = extractor.extract_sync("hide goals")
+
+        assert result.intent == "filter_graph"
+        assert result.data["show_outcomes"] is False
+
+    def test_extract_sync_filter_graph_text_filter(self, extractor, mock_client):
+        """Test extraction for filter_graph text filter."""
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content='{"intent": "filter_graph", "data": {"text_filter": "pricing"}, "confidence": 0.88}'
+                )
+            )
+        ]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        result = extractor.extract_sync("filter by pricing")
+
+        assert result.intent == "filter_graph"
+        assert result.data["text_filter"] == "pricing"
+
+    def test_extract_sync_filter_graph_reset(self, extractor, mock_client):
+        """Test extraction for filter_graph reset filters."""
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(
+                message=MagicMock(
+                    content='{"intent": "filter_graph", "data": {"reset_filters": true}, "confidence": 0.92}'
+                )
+            )
+        ]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        result = extractor.extract_sync("show everything")
+
+        assert result.intent == "filter_graph"
+        assert result.data["reset_filters"] is True
 
 
 @pytest.mark.asyncio

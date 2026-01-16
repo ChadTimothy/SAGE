@@ -110,6 +110,7 @@ def _response_to_dict(response: SAGEResponse) -> dict:
         "pending_data_request": None,
         "ui_purpose": None,
         "estimated_interaction_time": None,
+        "graph_filter_update": None,
     }
 
     # Add extended fields if present (ExtendedSAGEResponse)

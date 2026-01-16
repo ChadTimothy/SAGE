@@ -56,15 +56,14 @@ class SemanticSearch:
         Args:
             concept: The concept to index
         """
-        embedding = self.embedding_service.embed_concept(
-            concept.display_name or concept.name,
-            concept.description,
-        )
+        name = concept.display_name or concept.name
+        embedding = self.embedding_service.embed_concept(name, concept.description)
+        text = f"{name}: {concept.description}" if concept.description else name
         self.embedding_store.store(
             entity_type="concept",
             entity_id=concept.id,
             learner_id=concept.learner_id,
-            text=f"{concept.display_name}: {concept.description or ''}".strip(": "),
+            text=text,
             embedding=embedding,
         )
 
@@ -79,14 +78,13 @@ class SemanticSearch:
             outcome.clarified_goal,
             outcome.motivation,
         )
-        text_parts = [outcome.stated_goal]
-        if outcome.clarified_goal:
-            text_parts.append(outcome.clarified_goal)
+        parts = [outcome.stated_goal, outcome.clarified_goal]
+        text = " | ".join(p for p in parts if p)
         self.embedding_store.store(
             entity_type="outcome",
             entity_id=outcome.id,
             learner_id=outcome.learner_id,
-            text=" | ".join(text_parts),
+            text=text,
             embedding=embedding,
         )
 
@@ -240,8 +238,9 @@ class SemanticSearch:
         Returns:
             List of semantically related concepts
         """
-        text = f"{concept.display_name}: {concept.description or ''}".strip(": ")
-        matches = self.search_concepts(text, learner_id, limit + 1, threshold)
+        name = concept.display_name or concept.name
+        query = f"{name}: {concept.description}" if concept.description else name
+        matches = self.search_concepts(query, learner_id, limit + 1, threshold)
         return [m for m in matches if m.entity_id != concept.id][:limit]
 
     def reindex_learner(self, learner_id: str) -> dict:
