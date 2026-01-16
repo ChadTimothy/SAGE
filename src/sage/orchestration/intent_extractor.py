@@ -167,6 +167,50 @@ INTENT_SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "filter_graph": {
+        "description": "Filter knowledge graph visualization",
+        "required": [],
+        "optional": [
+            "show_proven_only",
+            "show_concepts",
+            "show_outcomes",
+            "text_filter",
+            "reset_filters",
+        ],
+        "extraction_hints": {
+            "show_proven_only": {
+                "type": "boolean",
+                "mappings": [
+                    ("proven, verified, demonstrated, mastered", True),
+                    ("all, everything, unfiltered", False),
+                ],
+            },
+            "show_concepts": {
+                "type": "boolean",
+                "mappings": [
+                    ("concepts, topics, ideas, knowledge", True),
+                    ("hide concepts, no concepts", False),
+                ],
+            },
+            "show_outcomes": {
+                "type": "boolean",
+                "mappings": [
+                    ("goals, outcomes, objectives", True),
+                    ("hide goals, hide outcomes, no goals", False),
+                ],
+            },
+            "text_filter": {
+                "type": "string",
+                "description": "Filter by text/topic (e.g., 'pricing', 'negotiation')",
+            },
+            "reset_filters": {
+                "type": "boolean",
+                "mappings": [
+                    ("show everything, clear filters, reset, all", True),
+                ],
+            },
+        },
+    },
 }
 
 

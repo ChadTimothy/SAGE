@@ -3,11 +3,12 @@
 import { useState, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { Network, ZoomIn, ZoomOut, RefreshCw } from "lucide-react";
-import { NodeDetailPanel, GraphFilters } from "@/components/graph";
+import { NodeDetailPanel, GraphFilters, VoiceCommandInput } from "@/components/graph";
 import type {
   KnowledgeNode,
   KnowledgeEdge,
   GraphFilterState,
+  GraphFilterUpdate,
   OutcomeSnapshot,
 } from "@/types";
 
@@ -122,7 +123,28 @@ export default function GraphPage(): JSX.Element {
     showProvenOnly: false,
     showConcepts: true,
     showOutcomes: true,
+    textFilter: "",
   });
+
+  const handleVoiceFilterUpdate = useCallback((update: GraphFilterUpdate) => {
+    if (update.resetFilters) {
+      setFilters({
+        selectedOutcome: null,
+        showProvenOnly: false,
+        showConcepts: true,
+        showOutcomes: true,
+        textFilter: "",
+      });
+    } else {
+      setFilters((prev) => ({
+        ...prev,
+        ...(update.showProvenOnly !== undefined && { showProvenOnly: update.showProvenOnly }),
+        ...(update.showConcepts !== undefined && { showConcepts: update.showConcepts }),
+        ...(update.showOutcomes !== undefined && { showOutcomes: update.showOutcomes }),
+        ...(update.textFilter !== undefined && { textFilter: update.textFilter }),
+      }));
+    }
+  }, []);
 
   const filteredNodes = useMemo(() => {
     return MOCK_NODES.filter((node) => {
@@ -139,6 +161,13 @@ export default function GraphPage(): JSX.Element {
           (e) => e.from === filters.selectedOutcome && e.to === node.id
         );
         return relatedEdges.length > 0;
+      }
+      // Text filter - search in label and description
+      if (filters.textFilter) {
+        const searchTerm = filters.textFilter.toLowerCase();
+        const matchesLabel = node.label.toLowerCase().includes(searchTerm);
+        const matchesDescription = node.description?.toLowerCase().includes(searchTerm);
+        if (!matchesLabel && !matchesDescription) return false;
       }
       return true;
     });
@@ -185,12 +214,13 @@ export default function GraphPage(): JSX.Element {
       </header>
 
       {hasData && (
-        <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+        <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 space-y-3">
           <GraphFilters
             filters={filters}
             outcomes={MOCK_OUTCOMES}
             onFilterChange={setFilters}
           />
+          <VoiceCommandInput onFilterUpdate={handleVoiceFilterUpdate} />
         </div>
       )}
 

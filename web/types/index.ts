@@ -209,6 +209,7 @@ export interface WSCompleteMessage {
     pending_data_request: PendingDataRequest | null;
     ui_purpose: string | null;
     estimated_interaction_time: number | null;
+    graph_filter_update: GraphFilterUpdate | null;
   };
 }
 
@@ -292,4 +293,14 @@ export interface GraphFilterState {
   showProvenOnly: boolean;
   showConcepts: boolean;
   showOutcomes: boolean;
+  textFilter?: string;
+}
+
+// Voice-driven graph filter update
+export interface GraphFilterUpdate {
+  showProvenOnly?: boolean;
+  showConcepts?: boolean;
+  showOutcomes?: boolean;
+  textFilter?: string;
+  resetFilters?: boolean;
 }
