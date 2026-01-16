@@ -622,3 +622,81 @@ class LearningGraph:
         """Update an existing edge."""
         self._store.update_edge(edge)
         return edge
+
+    # =========================================================================
+    # Semantic Search Operations (requires embeddings module)
+    # =========================================================================
+
+    def enable_semantic_search(self, embedding_db_path: Optional[str] = None) -> None:
+        """Enable semantic search capabilities.
+
+        Args:
+            embedding_db_path: Path for embedding storage (defaults to same as graph DB)
+        """
+        from sage.embeddings import EmbeddingService, EmbeddingStore, SemanticSearch
+
+        db_path = embedding_db_path or self._store.db_path
+        self._embedding_service = EmbeddingService()
+        self._embedding_store = EmbeddingStore(db_path)
+        self._semantic_search = SemanticSearch(
+            self._store, self._embedding_store, self._embedding_service
+        )
+
+    @property
+    def semantic_search(self):
+        """Access semantic search (must call enable_semantic_search first)."""
+        if not hasattr(self, "_semantic_search"):
+            raise RuntimeError("Semantic search not enabled. Call enable_semantic_search() first.")
+        return self._semantic_search
+
+    def search_concepts_semantically(
+        self,
+        query: str,
+        learner_id: str,
+        limit: int = 5,
+        threshold: float = 0.5,
+    ) -> list:
+        """Search for concepts by semantic similarity.
+
+        Args:
+            query: Natural language search query
+            learner_id: Learner whose concepts to search
+            limit: Maximum results
+            threshold: Minimum similarity score (0-1)
+
+        Returns:
+            List of SemanticMatch objects
+        """
+        return self.semantic_search.search_concepts(query, learner_id, limit, threshold)
+
+    def index_concept_for_search(self, concept: Concept) -> None:
+        """Index a concept for semantic search.
+
+        Called automatically when semantic search is enabled
+        and concepts are created.
+
+        Args:
+            concept: The concept to index
+        """
+        if hasattr(self, "_semantic_search"):
+            self._semantic_search.index_concept(concept)
+
+    def index_outcome_for_search(self, outcome: Outcome) -> None:
+        """Index an outcome for semantic search.
+
+        Args:
+            outcome: The outcome to index
+        """
+        if hasattr(self, "_semantic_search"):
+            self._semantic_search.index_outcome(outcome)
+
+    def reindex_for_search(self, learner_id: str) -> dict:
+        """Reindex all entities for a learner for semantic search.
+
+        Args:
+            learner_id: The learner to reindex
+
+        Returns:
+            Dict with counts of indexed entities
+        """
+        return self.semantic_search.reindex_learner(learner_id)
