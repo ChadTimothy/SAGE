@@ -5,9 +5,11 @@
  * - Text messages (chat)
  * - Form submissions (UI parity)
  * - Voice messages
+ * - Authentication via query parameter
  */
 
 import type { WSMessage, WSCompleteMessage } from "@/types";
+import { getAuthToken } from "./auth";
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 type CompleteHandler = (message: WSCompleteMessage) => void;
@@ -49,13 +51,19 @@ export class ChatWebSocket {
     this.sessionId = sessionId;
   }
 
-  connect(): void {
+  async connect(): Promise<void> {
     if (this.ws?.readyState === WebSocket.OPEN) {
       return;
     }
 
     this.notifyStatus("connecting");
-    const url = `${WS_BASE}/api/chat/${this.sessionId}`;
+
+    // Get auth token and include in query param
+    const token = await getAuthToken();
+    let url = `${WS_BASE}/api/chat/${this.sessionId}`;
+    if (token) {
+      url += `?token=${encodeURIComponent(token)}`;
+    }
 
     try {
       this.ws = new WebSocket(url);
@@ -120,9 +128,9 @@ export class ChatWebSocket {
     this.reconnectAttempts++;
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
 
-    setTimeout(() => {
+    setTimeout(async () => {
       console.log(`Reconnection attempt ${this.reconnectAttempts}...`);
-      this.connect();
+      await this.connect();
     }, delay);
   }
 

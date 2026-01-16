@@ -3,7 +3,6 @@
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from openai import OpenAI
@@ -25,6 +24,10 @@ from sage.api.schemas import (
     PracticeStartRequest,
     PracticeStartResponse,
 )
+from fastapi import Depends
+
+from ..auth import CurrentUser, get_current_user
+from ..guards import OwnershipVerifier
 
 logger = logging.getLogger(__name__)
 
@@ -175,16 +178,17 @@ Keep it to 1-2 sentences. Don't be overly formal unless the scenario calls for i
 
 
 @router.post("/start", response_model=PracticeStartResponse)
-async def start_practice(request: PracticeStartRequest) -> PracticeStartResponse:
+async def start_practice(
+    request: PracticeStartRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> PracticeStartResponse:
     """Start a new practice session."""
     graph = _get_graph()
     client = _get_llm_client()
+    verifier = OwnershipVerifier(graph)
 
-    # Get or create learner
-    learner_id = request.learner_id
-    if not learner_id:
-        learner = graph.get_or_create_learner()
-        learner_id = learner.id
+    # Use the authenticated user's learner_id
+    learner_id = user.learner_id
 
     # Create practice scenario
     scenario = PracticeScenario(
@@ -221,13 +225,16 @@ async def start_practice(request: PracticeStartRequest) -> PracticeStartResponse
 async def send_practice_message(
     session_id: str,
     request: PracticeMessageRequest,
+    user: CurrentUser = Depends(get_current_user),
 ) -> PracticeMessageResponse:
     """Send a message in practice mode and get character response."""
     graph = _get_graph()
     client = _get_llm_client()
     settings = get_settings()
+    verifier = OwnershipVerifier(graph)
 
-    # Get session
+    # Verify ownership and get session
+    verifier.verify_session(user, session_id)
     session = graph.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -264,12 +271,17 @@ async def send_practice_message(
 
 
 @router.post("/{session_id}/hint", response_model=PracticeHintResponse)
-async def get_practice_hint(session_id: str) -> PracticeHintResponse:
+async def get_practice_hint(
+    session_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> PracticeHintResponse:
     """Get a hint from SAGE during practice."""
     graph = _get_graph()
     client = _get_llm_client()
     settings = get_settings()
+    verifier = OwnershipVerifier(graph)
 
+    verifier.verify_session(user, session_id)
     session = graph.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -296,12 +308,17 @@ async def get_practice_hint(session_id: str) -> PracticeHintResponse:
 
 
 @router.post("/{session_id}/end", response_model=PracticeFeedbackResponse)
-async def end_practice(session_id: str) -> PracticeFeedbackResponse:
+async def end_practice(
+    session_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> PracticeFeedbackResponse:
     """End practice session and get feedback."""
     graph = _get_graph()
     client = _get_llm_client()
     settings = get_settings()
+    verifier = OwnershipVerifier(graph)
 
+    verifier.verify_session(user, session_id)
     session = graph.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")

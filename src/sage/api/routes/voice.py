@@ -8,6 +8,10 @@ import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from sage.core.config import get_settings
+from sage.graph.learning_graph import LearningGraph
+
+from ..auth import get_current_user_ws
+from ..guards import OwnershipVerifier
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["voice"])
@@ -115,7 +119,24 @@ async def websocket_voice(websocket: WebSocket, session_id: str) -> None:
 
     Proxies audio between browser and Grok Voice API,
     keeping the API key secure on the server.
+
+    Authentication via query parameter: ?token=xxx
     """
+    settings = get_settings()
+    graph = LearningGraph(settings.db_path)
+
+    # Authenticate user from query param token
+    try:
+        user = await get_current_user_ws(websocket)
+    except Exception:
+        return  # Connection already closed by get_current_user_ws
+
+    # Verify session ownership
+    session = graph.get_session(session_id)
+    if session and session.learner_id != user.learner_id:
+        await websocket.close(code=4003, reason="Access denied: not your session")
+        return
+
     await manager.connect_client(session_id, websocket)
 
     # Get initial voice preference from first message

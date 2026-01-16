@@ -304,3 +304,45 @@ export interface GraphFilterUpdate {
   textFilter?: string;
   resetFilters?: boolean;
 }
+
+// =============================================================================
+// Practice Scenario Types
+// =============================================================================
+
+export type ScenarioDifficulty = "easy" | "medium" | "hard";
+
+export interface Scenario {
+  id: string;
+  title: string;
+  description: string | null;
+  sage_role: string;
+  user_role: string;
+  category: string | null;
+  difficulty: ScenarioDifficulty;
+  is_preset: boolean;
+  learner_id: string | null;
+  times_used: number;
+}
+
+export interface ScenarioCreate {
+  title: string;
+  description?: string;
+  sage_role: string;
+  user_role: string;
+  category?: string;
+  difficulty?: ScenarioDifficulty;
+}
+
+export interface ScenarioUpdate {
+  title?: string;
+  description?: string;
+  sage_role?: string;
+  user_role?: string;
+  category?: string;
+  difficulty?: ScenarioDifficulty;
+}
+
+export interface ScenariosListResponse {
+  scenarios: Scenario[];
+  total: number;
+}

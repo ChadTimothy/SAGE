@@ -31,10 +31,12 @@ from .models import (
     PracticeScenario,
     Proof,
     ProofExchange,
+    ScenarioDifficulty,
     Session,
     SessionContext,
     SessionEndingState,
     SessionType,
+    StoredScenario,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -165,6 +167,37 @@ CREATE TABLE IF NOT EXISTS edges (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Users table (authentication)
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    learner_id TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE,
+    name TEXT,
+    provider TEXT DEFAULT 'credentials',
+    password_hash TEXT,
+    password_salt TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_login_at DATETIME,
+    FOREIGN KEY (learner_id) REFERENCES learners(id)
+);
+
+-- Practice scenarios table (reusable scenario templates)
+CREATE TABLE IF NOT EXISTS scenarios (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    sage_role TEXT NOT NULL,
+    user_role TEXT NOT NULL,
+    category TEXT,
+    difficulty TEXT DEFAULT 'medium',
+    related_concepts JSON,
+    is_preset INTEGER DEFAULT 0,
+    learner_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    times_used INTEGER DEFAULT 0,
+    FOREIGN KEY (learner_id) REFERENCES learners(id)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_outcomes_learner ON outcomes(learner_id);
 CREATE INDEX IF NOT EXISTS idx_outcomes_status ON outcomes(status);
@@ -179,6 +212,11 @@ CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type);
 CREATE INDEX IF NOT EXISTS idx_applications_learner ON application_events(learner_id);
 CREATE INDEX IF NOT EXISTS idx_applications_status ON application_events(status);
 CREATE INDEX IF NOT EXISTS idx_applications_followup ON application_events(status, planned_date);
+CREATE INDEX IF NOT EXISTS idx_users_learner ON users(learner_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_scenarios_learner ON scenarios(learner_id);
+CREATE INDEX IF NOT EXISTS idx_scenarios_preset ON scenarios(is_preset);
+CREATE INDEX IF NOT EXISTS idx_scenarios_category ON scenarios(category);
 """
 
 
@@ -234,9 +272,11 @@ class GraphStore:
         self._init_db()
 
     def _init_db(self) -> None:
-        """Initialize database with schema."""
+        """Initialize database with schema and seed data."""
         with self.connection() as conn:
             conn.executescript(SCHEMA)
+        # Seed preset scenarios if they don't exist
+        self.seed_preset_scenarios()
 
     @contextmanager
     def connection(self):
@@ -975,3 +1015,320 @@ class GraphStore:
             metadata=_deserialize_json(row["metadata"]) or {},
             created_at=_parse_datetime(row["created_at"]),
         )
+
+    # =========================================================================
+    # User Operations (Authentication)
+    # =========================================================================
+
+    def create_user(
+        self,
+        user_id: str,
+        learner_id: str,
+        email: Optional[str] = None,
+        name: Optional[str] = None,
+        provider: str = "credentials",
+        password_hash: Optional[str] = None,
+        password_salt: Optional[str] = None,
+    ) -> dict:
+        """Create a user linked to a learner."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO users (
+                    id, learner_id, email, name, provider,
+                    password_hash, password_salt, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    learner_id,
+                    email,
+                    name,
+                    provider,
+                    password_hash,
+                    password_salt,
+                    datetime.utcnow().isoformat(),
+                ),
+            )
+        return {
+            "id": user_id,
+            "learner_id": learner_id,
+            "email": email,
+            "name": name,
+            "provider": provider,
+        }
+
+    def get_user(self, user_id: str) -> Optional[dict]:
+        """Get user by auth provider ID."""
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            return self._row_to_user(row)
+
+    def get_user_by_email(self, email: str) -> Optional[dict]:
+        """Get user by email."""
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE email = ?", (email,)
+            ).fetchone()
+            if row is None:
+                return None
+            return self._row_to_user(row)
+
+    def get_user_by_learner(self, learner_id: str) -> Optional[dict]:
+        """Get user by learner ID."""
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE learner_id = ?", (learner_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            return self._row_to_user(row)
+
+    def update_user_last_login(self, user_id: str) -> None:
+        """Update last login timestamp."""
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE users SET last_login_at = ? WHERE id = ?",
+                (datetime.utcnow().isoformat(), user_id),
+            )
+
+    def _row_to_user(self, row: sqlite3.Row) -> dict:
+        """Convert a database row to a user dict."""
+        return {
+            "id": row["id"],
+            "learner_id": row["learner_id"],
+            "email": row["email"],
+            "name": row["name"],
+            "provider": row["provider"],
+            "password_hash": row["password_hash"],
+            "password_salt": row["password_salt"],
+            "created_at": row["created_at"],
+            "last_login_at": row["last_login_at"],
+        }
+
+    # =========================================================================
+    # Scenario Operations
+    # =========================================================================
+
+    def create_scenario(self, scenario: StoredScenario) -> StoredScenario:
+        """Create a new practice scenario."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO scenarios (
+                    id, title, description, sage_role, user_role,
+                    category, difficulty, related_concepts,
+                    is_preset, learner_id, created_at, times_used
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scenario.id,
+                    scenario.title,
+                    scenario.description,
+                    scenario.sage_role,
+                    scenario.user_role,
+                    scenario.category,
+                    scenario.difficulty.value,
+                    json.dumps(scenario.related_concepts),
+                    1 if scenario.is_preset else 0,
+                    scenario.learner_id,
+                    scenario.created_at.isoformat(),
+                    scenario.times_used,
+                ),
+            )
+        return scenario
+
+    def get_scenario(self, scenario_id: str) -> Optional[StoredScenario]:
+        """Get a scenario by ID."""
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM scenarios WHERE id = ?", (scenario_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            return self._row_to_scenario(row)
+
+    def get_scenarios_for_learner(
+        self, learner_id: str, include_presets: bool = True
+    ) -> list[StoredScenario]:
+        """Get all scenarios available to a learner (their custom + presets)."""
+        with self.connection() as conn:
+            if include_presets:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM scenarios
+                    WHERE learner_id = ? OR is_preset = 1
+                    ORDER BY is_preset DESC, times_used DESC, created_at DESC
+                    """,
+                    (learner_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM scenarios
+                    WHERE learner_id = ?
+                    ORDER BY times_used DESC, created_at DESC
+                    """,
+                    (learner_id,),
+                ).fetchall()
+            return [self._row_to_scenario(row) for row in rows]
+
+    def get_preset_scenarios(self) -> list[StoredScenario]:
+        """Get all preset scenarios."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM scenarios
+                WHERE is_preset = 1
+                ORDER BY category, title
+                """
+            ).fetchall()
+            return [self._row_to_scenario(row) for row in rows]
+
+    def update_scenario(self, scenario: StoredScenario) -> StoredScenario:
+        """Update a scenario."""
+        with self.connection() as conn:
+            conn.execute(
+                """
+                UPDATE scenarios SET
+                    title = ?,
+                    description = ?,
+                    sage_role = ?,
+                    user_role = ?,
+                    category = ?,
+                    difficulty = ?,
+                    related_concepts = ?,
+                    times_used = ?
+                WHERE id = ?
+                """,
+                (
+                    scenario.title,
+                    scenario.description,
+                    scenario.sage_role,
+                    scenario.user_role,
+                    scenario.category,
+                    scenario.difficulty.value,
+                    json.dumps(scenario.related_concepts),
+                    scenario.times_used,
+                    scenario.id,
+                ),
+            )
+        return scenario
+
+    def increment_scenario_usage(self, scenario_id: str) -> None:
+        """Increment the times_used counter for a scenario."""
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE scenarios SET times_used = times_used + 1 WHERE id = ?",
+                (scenario_id,),
+            )
+
+    def delete_scenario(self, scenario_id: str) -> bool:
+        """Delete a scenario. Returns True if deleted, False if not found."""
+        with self.connection() as conn:
+            result = conn.execute(
+                "DELETE FROM scenarios WHERE id = ? AND is_preset = 0",
+                (scenario_id,),
+            )
+            return result.rowcount > 0
+
+    def _row_to_scenario(self, row: sqlite3.Row) -> StoredScenario:
+        """Convert a database row to a StoredScenario."""
+        related_concepts = _deserialize_json(row["related_concepts"]) or []
+        return StoredScenario(
+            id=row["id"],
+            title=row["title"],
+            description=row["description"],
+            sage_role=row["sage_role"],
+            user_role=row["user_role"],
+            category=row["category"],
+            difficulty=ScenarioDifficulty(row["difficulty"]),
+            related_concepts=related_concepts,
+            is_preset=bool(row["is_preset"]),
+            learner_id=row["learner_id"],
+            created_at=_parse_datetime(row["created_at"]) or datetime.now(),
+            times_used=row["times_used"],
+        )
+
+    def seed_preset_scenarios(self) -> int:
+        """Seed default preset scenarios if none exist.
+
+        Returns the number of scenarios created.
+        """
+        # Check if presets already exist
+        existing = self.get_preset_scenarios()
+        if existing:
+            return 0
+
+        # Default preset scenarios
+        presets = [
+            StoredScenario(
+                id="preset-pricing-call",
+                title="Pricing Call",
+                description="Practice handling price objections and negotiating your rates",
+                sage_role="Potential client asking for discounts",
+                user_role="Service provider",
+                category="sales",
+                difficulty=ScenarioDifficulty.MEDIUM,
+                is_preset=True,
+            ),
+            StoredScenario(
+                id="preset-negotiation",
+                title="Negotiation",
+                description="Practice negotiation tactics with a counterparty",
+                sage_role="Negotiation counterparty",
+                user_role="Negotiator",
+                category="negotiation",
+                difficulty=ScenarioDifficulty.MEDIUM,
+                is_preset=True,
+            ),
+            StoredScenario(
+                id="preset-presentation-qa",
+                title="Presentation Q&A",
+                description="Practice answering tough questions from your audience",
+                sage_role="Audience member asking challenging questions",
+                user_role="Presenter",
+                category="presentation",
+                difficulty=ScenarioDifficulty.MEDIUM,
+                is_preset=True,
+            ),
+            StoredScenario(
+                id="preset-job-interview",
+                title="Job Interview",
+                description="Practice common interview questions and scenarios",
+                sage_role="Interviewer",
+                user_role="Job candidate",
+                category="interview",
+                difficulty=ScenarioDifficulty.MEDIUM,
+                is_preset=True,
+            ),
+            StoredScenario(
+                id="preset-difficult-conversation",
+                title="Difficult Conversation",
+                description="Practice having a tough but necessary conversation",
+                sage_role="Person receiving difficult news",
+                user_role="Person delivering the message",
+                category="communication",
+                difficulty=ScenarioDifficulty.HARD,
+                is_preset=True,
+            ),
+            StoredScenario(
+                id="preset-salary-raise",
+                title="Asking for a Raise",
+                description="Practice asking your manager for a salary increase",
+                sage_role="Your manager",
+                user_role="Employee asking for raise",
+                category="negotiation",
+                difficulty=ScenarioDifficulty.MEDIUM,
+                is_preset=True,
+            ),
+        ]
+
+        for scenario in presets:
+            self.create_scenario(scenario)
+
+        return len(presets)

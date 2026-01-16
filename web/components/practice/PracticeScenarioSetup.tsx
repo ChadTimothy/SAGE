@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Theater, MessageSquare, DollarSign, Users, Presentation, X } from "lucide-react";
+import { Theater, MessageSquare, DollarSign, Users, Presentation, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
+import type { Scenario } from "@/types";
 import type { PracticeScenario } from "./PracticeModeContainer";
 
 export interface PracticeScenarioSetupProps {
@@ -13,43 +15,34 @@ export interface PracticeScenarioSetupProps {
   suggestedScenario?: string;
 }
 
-const PRESET_SCENARIOS: PracticeScenario[] = [
-  {
-    id: "pricing-call",
-    title: "Pricing Call",
-    description: "Practice handling price objections and negotiating your rates",
-    sageRole: "Potential client asking for discounts",
-    userRole: "Service provider",
-  },
-  {
-    id: "negotiation",
-    title: "Negotiation",
-    description: "Practice negotiation tactics with a counterparty",
-    sageRole: "Negotiation counterparty",
-    userRole: "Negotiator",
-  },
-  {
-    id: "presentation",
-    title: "Presentation Q&A",
-    description: "Practice answering tough questions from your audience",
-    sageRole: "Audience member asking challenging questions",
-    userRole: "Presenter",
-  },
-  {
-    id: "interview",
-    title: "Job Interview",
-    description: "Practice common interview questions and scenarios",
-    sageRole: "Interviewer",
-    userRole: "Job candidate",
-  },
-];
-
+// Map scenario IDs/categories to icons
 const SCENARIO_ICONS: Record<string, typeof DollarSign> = {
   "pricing-call": DollarSign,
-  negotiation: Users,
-  presentation: Presentation,
-  interview: MessageSquare,
+  "pricing": DollarSign,
+  "negotiation": Users,
+  "presentation": Presentation,
+  "interview": MessageSquare,
+  "sales": DollarSign,
 };
+
+function getScenarioIcon(scenario: Scenario): typeof DollarSign {
+  // Check by ID first, then category
+  if (SCENARIO_ICONS[scenario.id]) return SCENARIO_ICONS[scenario.id];
+  if (scenario.category && SCENARIO_ICONS[scenario.category]) {
+    return SCENARIO_ICONS[scenario.category];
+  }
+  return MessageSquare;
+}
+
+function toFrontendScenario(scenario: Scenario): PracticeScenario {
+  return {
+    id: scenario.id,
+    title: scenario.title,
+    description: scenario.description || "Practice scenario",
+    sageRole: scenario.sage_role,
+    userRole: scenario.user_role,
+  };
+}
 
 export function PracticeScenarioSetup({
   isOpen,
@@ -57,9 +50,39 @@ export function PracticeScenarioSetup({
   onStart,
   suggestedScenario,
 }: PracticeScenarioSetupProps): JSX.Element | null {
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [customScenario, setCustomScenario] = useState("");
   const [customRole, setCustomRole] = useState("");
   const [showCustom, setShowCustom] = useState(false);
+
+  // Fetch scenarios when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const fetchScenarios = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        // Try to get user's scenarios + presets
+        const response = await api.listScenarios(true);
+        setScenarios(response.scenarios);
+      } catch (err) {
+        // If auth fails, fall back to just presets (no auth required)
+        try {
+          const presetsResponse = await api.listPresetScenarios();
+          setScenarios(presetsResponse.scenarios);
+        } catch {
+          setError("Failed to load scenarios");
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchScenarios();
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -127,32 +150,64 @@ export function PracticeScenarioSetup({
 
             {!showCustom ? (
               <>
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  {PRESET_SCENARIOS.map((scenario) => {
-                    const Icon = SCENARIO_ICONS[scenario.id] || MessageSquare;
-                    return (
-                      <button
-                        key={scenario.id}
-                        onClick={() => onStart(scenario)}
-                        className={cn(
-                          "flex flex-col items-start p-4 rounded-xl border-2 text-left",
-                          "border-slate-200 dark:border-slate-700",
-                          "hover:border-amber-400 dark:hover:border-amber-500",
-                          "hover:bg-amber-50 dark:hover:bg-amber-900/10",
-                          "transition-all"
-                        )}
-                      >
-                        <Icon className="w-5 h-5 text-amber-600 dark:text-amber-400 mb-2" />
-                        <span className="font-medium text-slate-900 dark:text-white">
-                          {scenario.title}
-                        </span>
-                        <span className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          {scenario.description}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* Loading state */}
+                {isLoading && (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
+                    <span className="ml-2 text-slate-500">Loading scenarios...</span>
+                  </div>
+                )}
+
+                {/* Error state */}
+                {error && (
+                  <div className="py-4 text-center text-red-500 dark:text-red-400">
+                    {error}
+                  </div>
+                )}
+
+                {/* Scenarios grid */}
+                {!isLoading && !error && scenarios.length > 0 && (
+                  <div className="grid grid-cols-2 gap-3 mb-4 max-h-64 overflow-y-auto">
+                    {scenarios.map((scenario) => {
+                      const Icon = getScenarioIcon(scenario);
+                      return (
+                        <button
+                          key={scenario.id}
+                          onClick={() => onStart(toFrontendScenario(scenario))}
+                          className={cn(
+                            "flex flex-col items-start p-4 rounded-xl border-2 text-left",
+                            "border-slate-200 dark:border-slate-700",
+                            "hover:border-amber-400 dark:hover:border-amber-500",
+                            "hover:bg-amber-50 dark:hover:bg-amber-900/10",
+                            "transition-all"
+                          )}
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <Icon className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                            {!scenario.is_preset && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">
+                                Custom
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-medium text-slate-900 dark:text-white">
+                            {scenario.title}
+                          </span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
+                            {scenario.description || `Play: ${scenario.user_role}`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Empty state */}
+                {!isLoading && !error && scenarios.length === 0 && (
+                  <div className="py-8 text-center text-slate-500">
+                    No scenarios available. Create a custom one below.
+                  </div>
+                )}
 
                 <button
                   onClick={() => setShowCustom(true)}

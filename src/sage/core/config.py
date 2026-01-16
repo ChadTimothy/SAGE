@@ -56,6 +56,13 @@ class Settings(BaseSettings):
         description="Logging level (DEBUG, INFO, WARNING, ERROR)",
     )
 
+    # Authentication
+    nextauth_secret: str = Field(
+        default="",
+        validation_alias="NEXTAUTH_SECRET",
+        description="Secret for NextAuth.js JWT signing (required for auth)",
+    )
+
     @property
     def log_level_int(self) -> int:
         """Get log level as integer for logging module."""
