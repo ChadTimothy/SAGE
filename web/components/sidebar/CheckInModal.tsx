@@ -24,6 +24,8 @@ export interface CheckInModalProps {
   onInputModeChange?: (mode: InputMode) => void;
   /** Whether voice is currently available */
   voiceAvailable?: boolean;
+  /** Whether session creation is in progress */
+  isLoading?: boolean;
 }
 
 type TimeOption = SessionContext["timeAvailable"];
@@ -76,6 +78,7 @@ export function CheckInModal({
   prefillData,
   onInputModeChange,
   voiceAvailable = true,
+  isLoading = false,
 }: CheckInModalProps): JSX.Element {
   const [inputMode, setInputMode] = useState<InputMode>("form");
   const [timeAvailable, setTimeAvailable] = useState<TimeOption>("focused");
@@ -260,10 +263,26 @@ export function CheckInModal({
 
                     <button
                       onClick={handleSubmit}
-                      className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-sage-600 hover:bg-sage-700 text-white font-medium rounded-xl transition-colors"
+                      disabled={isLoading}
+                      className={cn(
+                        "w-full flex items-center justify-center gap-2 px-6 py-3 font-medium rounded-xl transition-colors",
+                        isLoading
+                          ? "bg-sage-400 cursor-not-allowed"
+                          : "bg-sage-600 hover:bg-sage-700",
+                        "text-white"
+                      )}
                     >
-                      Let&apos;s begin
-                      <ArrowRight className="h-4 w-4" />
+                      {isLoading ? (
+                        <>
+                          <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Starting session...
+                        </>
+                      ) : (
+                        <>
+                          Let&apos;s begin
+                          <ArrowRight className="h-4 w-4" />
+                        </>
+                      )}
                     </button>
                   </>
                 )}

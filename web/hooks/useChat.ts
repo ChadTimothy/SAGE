@@ -6,32 +6,30 @@ import type { ChatMessage, DialogueMode, WSCompleteMessage } from "@/types";
 
 interface UseChatOptions {
   sessionId: string;
+  /** Skip WebSocket connection if false. Use this to delay connection until session is ready. */
+  enabled?: boolean;
   onMessage?: (message: ChatMessage) => void;
   onError?: (error: string) => void;
 }
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
-export function useChat({ sessionId, onMessage, onError }: UseChatOptions) {
+export function useChat({ sessionId, enabled = true, onMessage, onError }: UseChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [isTyping, setIsTyping] = useState(false);
   const wsRef = useRef<ChatWebSocket | null>(null);
-  const onMessageRef = useRef(onMessage);
-  const onErrorRef = useRef(onError);
+  const callbacksRef = useRef({ onMessage, onError });
 
-  // Keep refs in sync
+  // Keep callbacks ref in sync
   useEffect(() => {
-    onMessageRef.current = onMessage;
-  }, [onMessage]);
-
-  useEffect(() => {
-    onErrorRef.current = onError;
-  }, [onError]);
+    callbacksRef.current = { onMessage, onError };
+  }, [onMessage, onError]);
 
   // Connect to WebSocket
   useEffect(() => {
-    if (!sessionId) return;
+    // Don't connect if disabled or no session ID
+    if (!enabled || !sessionId) return;
 
     const ws = createChatConnection(sessionId);
     wsRef.current = ws;
@@ -51,7 +49,7 @@ export function useChat({ sessionId, onMessage, onError }: UseChatOptions) {
 
       setMessages((prev) => [...prev, chatMessage]);
       setIsTyping(false);
-      onMessageRef.current?.(chatMessage);
+      callbacksRef.current.onMessage?.(chatMessage);
     });
 
     // Handle streaming chunks (for typing indicator)
@@ -64,7 +62,7 @@ export function useChat({ sessionId, onMessage, onError }: UseChatOptions) {
     const unsubError = ws.onError((errorMessage: string) => {
       console.error("Chat error:", errorMessage);
       setIsTyping(false);
-      onErrorRef.current?.(errorMessage);
+      callbacksRef.current.onError?.(errorMessage);
     });
 
     // Handle status changes
@@ -83,7 +81,7 @@ export function useChat({ sessionId, onMessage, onError }: UseChatOptions) {
       unsubStatus();
       ws.disconnect();
     };
-  }, [sessionId]);
+  }, [sessionId, enabled]);
 
   // Send message
   const sendMessage = useCallback(

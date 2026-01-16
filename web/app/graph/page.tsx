@@ -1,15 +1,19 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { Network, ZoomIn, ZoomOut, RefreshCw } from "lucide-react";
+import { Network, ZoomIn, ZoomOut, RefreshCw, AlertCircle } from "lucide-react";
+import { useSessionLearner } from "@/hooks/useSessionLearner";
+import { api } from "@/lib/api";
 import { NodeDetailPanel, GraphFilters, VoiceCommandInput } from "@/components/graph";
 import type {
   KnowledgeNode,
+  KnowledgeNodeStatus,
   KnowledgeEdge,
   GraphFilterState,
   GraphFilterUpdate,
   OutcomeSnapshot,
+  LearnerGraph,
 } from "@/types";
 
 // Dynamic import to avoid SSR issues with vis-network
@@ -25,98 +29,12 @@ const KnowledgeGraph = dynamic(
   }
 );
 
-// Mock data for testing
-const MOCK_NODES: KnowledgeNode[] = [
-  {
-    id: "outcome-1",
-    type: "outcome",
-    label: "Price freelance services confidently",
-    status: "active",
-    description: "Be able to confidently quote and negotiate pricing for freelance design work",
-  },
-  {
-    id: "concept-1",
-    type: "concept",
-    label: "Value articulation",
-    status: "proven",
-    description: "Ability to clearly communicate the value you provide to clients",
-    proofCount: 2,
-  },
-  {
-    id: "concept-2",
-    type: "concept",
-    label: "Market positioning",
-    status: "proven",
-    description: "Understanding where you fit in the market relative to competitors",
-    proofCount: 1,
-  },
-  {
-    id: "concept-3",
-    type: "concept",
-    label: "Handling objections",
-    status: "in_progress",
-    description: "Techniques for responding when clients push back on pricing",
-  },
-  {
-    id: "concept-4",
-    type: "concept",
-    label: "Scope definition",
-    status: "identified",
-    description: "Clearly defining project boundaries to prevent scope creep",
-  },
-  {
-    id: "outcome-2",
-    type: "outcome",
-    label: "Run effective client meetings",
-    status: "achieved",
-    description: "Conduct productive client meetings that move projects forward",
-  },
-  {
-    id: "concept-5",
-    type: "concept",
-    label: "Active listening",
-    status: "proven",
-    description: "Listening to understand client needs deeply",
-    proofCount: 1,
-  },
-  {
-    id: "concept-6",
-    type: "concept",
-    label: "Meeting structure",
-    status: "proven",
-    description: "How to organize and run an effective meeting",
-    proofCount: 1,
-  },
-];
-
-const MOCK_EDGES: KnowledgeEdge[] = [
-  { id: "e1", from: "outcome-1", to: "concept-1", type: "requires" },
-  { id: "e2", from: "outcome-1", to: "concept-2", type: "requires" },
-  { id: "e3", from: "outcome-1", to: "concept-3", type: "requires" },
-  { id: "e4", from: "outcome-1", to: "concept-4", type: "requires" },
-  { id: "e5", from: "concept-1", to: "concept-3", type: "relates_to" },
-  { id: "e6", from: "outcome-2", to: "concept-5", type: "requires" },
-  { id: "e7", from: "outcome-2", to: "concept-6", type: "requires" },
-  { id: "e8", from: "concept-5", to: "concept-1", type: "relates_to" },
-  { id: "e9", from: "outcome-1", to: "outcome-2", type: "builds_on" },
-];
-
-const MOCK_OUTCOMES: OutcomeSnapshot[] = [
-  {
-    id: "outcome-1",
-    description: "Price freelance services confidently",
-    status: "active",
-    concepts: [],
-  },
-  {
-    id: "outcome-2",
-    description: "Run effective client meetings",
-    status: "achieved",
-    concepts: [],
-  },
-];
-
 export default function GraphPage(): JSX.Element {
+  const { learnerId, isLoading: learnerLoading, isAuthenticated } = useSessionLearner();
+  const [graphData, setGraphData] = useState<LearnerGraph | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [selectedNode, setSelectedNode] = useState<KnowledgeNode | null>(null);
   const [filters, setFilters] = useState<GraphFilterState>({
     selectedOutcome: null,
@@ -125,10 +43,72 @@ export default function GraphPage(): JSX.Element {
     showOutcomes: true,
     textFilter: "",
   });
+  // Obsidian-style display options
+  const [showLabels, setShowLabels] = useState(true);
+  const [depthLimit, setDepthLimit] = useState(1); // Default to direct connections
 
-  const handleVoiceFilterUpdate = useCallback(function handleVoiceFilterUpdate(
-    update: GraphFilterUpdate
-  ) {
+  // Fetch graph data when learner is available
+  useEffect(() => {
+    if (learnerLoading) return;
+
+    if (!learnerId) {
+      setIsLoading(false);
+      return;
+    }
+
+    const loadGraph = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const data = await api.getLearnerGraph(learnerId);
+        setGraphData(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load graph");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadGraph();
+  }, [learnerId, learnerLoading]);
+
+  // Transform API response to component format
+  const nodes: KnowledgeNode[] = useMemo(() => {
+    if (!graphData) return [];
+    return graphData.nodes.map((node) => ({
+      id: node.id,
+      type: node.type as "outcome" | "concept",
+      label: node.label,
+      status: ((node.data?.status as string) || "identified") as KnowledgeNodeStatus,
+      description: node.data?.description as string | undefined,
+      proofCount: node.data?.proofCount as number | undefined,
+    }));
+  }, [graphData]);
+
+  const edges: KnowledgeEdge[] = useMemo(() => {
+    if (!graphData) return [];
+    return graphData.edges.map((edge) => ({
+      id: edge.id,
+      from: edge.from_id,
+      to: edge.to_id,
+      type: edge.edge_type as "requires" | "relates_to" | "builds_on",
+    }));
+  }, [graphData]);
+
+  // Extract outcomes for the filter dropdown
+  const outcomes: OutcomeSnapshot[] = useMemo(() => {
+    return nodes
+      .filter((node) => node.type === "outcome")
+      .map((node) => ({
+        id: node.id,
+        description: node.label,
+        status: node.status as "active" | "achieved" | "paused" | "abandoned",
+        concepts: [],
+      }));
+  }, [nodes]);
+
+  const handleVoiceFilterUpdate = useCallback((update: GraphFilterUpdate) => {
     if (update.resetFilters) {
       setFilters({
         selectedOutcome: null,
@@ -140,56 +120,94 @@ export default function GraphPage(): JSX.Element {
       return;
     }
 
-    setFilters(function applyUpdate(prev) {
-      const next = { ...prev };
-      if (update.showProvenOnly !== undefined) next.showProvenOnly = update.showProvenOnly;
-      if (update.showConcepts !== undefined) next.showConcepts = update.showConcepts;
-      if (update.showOutcomes !== undefined) next.showOutcomes = update.showOutcomes;
-      if (update.textFilter !== undefined) next.textFilter = update.textFilter;
-      return next;
-    });
+    setFilters((prev) => ({
+      ...prev,
+      ...(update.showProvenOnly !== undefined && { showProvenOnly: update.showProvenOnly }),
+      ...(update.showConcepts !== undefined && { showConcepts: update.showConcepts }),
+      ...(update.showOutcomes !== undefined && { showOutcomes: update.showOutcomes }),
+      ...(update.textFilter !== undefined && { textFilter: update.textFilter }),
+    }));
   }, []);
 
-  const filteredNodes = useMemo(function computeFilteredNodes() {
-    return MOCK_NODES.filter(function filterNode(node) {
+  const filteredNodes = useMemo(() => {
+    return nodes.filter((node) => {
       if (node.type === "outcome" && !filters.showOutcomes) return false;
       if (node.type === "concept" && !filters.showConcepts) return false;
       if (filters.showProvenOnly && node.status !== "proven" && node.status !== "achieved") {
         return false;
       }
       if (filters.selectedOutcome) {
-        if (node.type === "outcome") {
-          return node.id === filters.selectedOutcome;
-        }
-        return MOCK_EDGES.some(
-          (e) => e.from === filters.selectedOutcome && e.to === node.id
-        );
+        if (node.type === "outcome") return node.id === filters.selectedOutcome;
+        return edges.some((e) => e.from === filters.selectedOutcome && e.to === node.id);
       }
       if (filters.textFilter) {
         const searchTerm = filters.textFilter.toLowerCase();
-        const matchesLabel = node.label.toLowerCase().includes(searchTerm);
-        const matchesDescription = node.description?.toLowerCase().includes(searchTerm);
-        return matchesLabel || matchesDescription;
+        return (
+          node.label.toLowerCase().includes(searchTerm) ||
+          node.description?.toLowerCase().includes(searchTerm)
+        );
       }
       return true;
     });
-  }, [filters]);
+  }, [filters, nodes, edges]);
 
-  const filteredEdges = useMemo(function computeFilteredEdges() {
+  const filteredEdges = useMemo(() => {
     const nodeIds = new Set(filteredNodes.map((n) => n.id));
-    return MOCK_EDGES.filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to));
-  }, [filteredNodes]);
+    return edges.filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to));
+  }, [filteredNodes, edges]);
 
-  const handleNodeClick = useCallback(function handleNodeClick(nodeId: string) {
-    const node = MOCK_NODES.find((n) => n.id === nodeId);
-    setSelectedNode(node ?? null);
-  }, []);
+  const handleNodeClick = useCallback(
+    (nodeId: string) => setSelectedNode(nodes.find((n) => n.id === nodeId) ?? null),
+    [nodes]
+  );
 
-  const handleClosePanel = useCallback(function handleClosePanel() {
-    setSelectedNode(null);
-  }, []);
+  const handleClosePanel = useCallback(() => setSelectedNode(null), []);
 
-  const hasData = MOCK_NODES.length > 0;
+  const hasData = nodes.length > 0;
+
+  // Handle loading state
+  if (learnerLoading || isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 text-slate-400 mx-auto mb-2 animate-spin" />
+          <div className="text-slate-500">Loading knowledge graph...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Handle not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <Network className="h-16 w-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" />
+          <h2 className="text-lg font-medium text-slate-700 dark:text-slate-300 mb-2">
+            Please log in
+          </h2>
+          <p className="text-slate-500 dark:text-slate-400">
+            Log in to view your knowledge graph.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Handle error state
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <AlertCircle className="h-16 w-16 text-red-300 dark:text-red-600 mx-auto mb-4" />
+          <h2 className="text-lg font-medium text-red-700 dark:text-red-300 mb-2">
+            Error loading graph
+          </h2>
+          <p className="text-red-500 dark:text-red-400">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -219,8 +237,12 @@ export default function GraphPage(): JSX.Element {
         <div className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 space-y-3">
           <GraphFilters
             filters={filters}
-            outcomes={MOCK_OUTCOMES}
+            outcomes={outcomes}
             onFilterChange={setFilters}
+            showLabels={showLabels}
+            onShowLabelsChange={setShowLabels}
+            depthLimit={depthLimit}
+            onDepthLimitChange={setDepthLimit}
           />
           <VoiceCommandInput onFilterUpdate={handleVoiceFilterUpdate} />
         </div>
@@ -234,6 +256,8 @@ export default function GraphPage(): JSX.Element {
               edges={filteredEdges}
               onNodeClick={handleNodeClick}
               highlightedNode={selectedNode?.id}
+              showLabels={showLabels}
+              depthLimit={depthLimit}
             />
             <NodeDetailPanel node={selectedNode} onClose={handleClosePanel} />
           </>

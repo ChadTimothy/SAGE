@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import { AnimatePresence } from "framer-motion";
-import { Wifi, WifiOff, RefreshCw, Theater } from "lucide-react";
+import { Wifi, WifiOff, RefreshCw, Theater, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChat } from "@/hooks/useChat";
 import { useGrokVoice } from "@/hooks/useGrokVoice";
 import { usePracticeMode } from "@/hooks/usePracticeMode";
+import { api } from "@/lib/api";
 import {
   MessageBubble,
   ChatInput,
@@ -54,20 +56,21 @@ const STATUS_CONFIG: Record<ConnectionStatus, StatusDisplay> = {
   },
 };
 
-function generateSessionId(): string {
-  return `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
 export default function ChatPage(): JSX.Element {
-  const [sessionId] = useState(generateSessionId);
+  const { data: authSession, status: authStatus } = useSession();
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showCheckIn, setShowCheckIn] = useState(true);
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null);
   const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(false);
   const lastVoicedMessageIdRef = useRef<string | null>(null);
 
+  // Only connect WebSocket after we have a real session ID from the API
   const { messages, status, isTyping, sendMessage, sendFormSubmission, isConnected } = useChat({
-    sessionId,
+    sessionId: sessionId || "",
+    enabled: !!sessionId,
   });
 
   const practice = usePracticeMode({
@@ -95,10 +98,15 @@ export default function ChatPage(): JSX.Element {
     currentVoice,
     error: voiceError,
   } = useGrokVoice({
-    sessionId,
+    sessionId: sessionId || "",
     onTranscript: (text, isFinal) => {
       if (isFinal && text.trim()) {
-        sendMessage(text.trim(), true);
+        // Route voice transcript to practice mode if active, otherwise to regular chat
+        if (practice.isActive) {
+          practice.sendMessage(text.trim());
+        } else {
+          sendMessage(text.trim(), true);
+        }
       }
     },
     onResponse: (text) => {
@@ -110,10 +118,29 @@ export default function ChatPage(): JSX.Element {
     },
   });
 
-  const handleCheckInComplete = useCallback((context: SessionContext) => {
-    setSessionContext(context);
-    setShowCheckIn(false);
-  }, []);
+  const handleCheckInComplete = useCallback(async (context: SessionContext) => {
+    if (!authSession?.user?.learner_id) {
+      setSessionError("Not authenticated. Please log in.");
+      return;
+    }
+
+    setIsCreatingSession(true);
+    setSessionError(null);
+
+    try {
+      // Create a real session via the API
+      const session = await api.createSession({
+        learner_id: authSession.user.learner_id,
+      });
+      setSessionId(session.id);
+      setSessionContext(context);
+      setShowCheckIn(false);
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : "Failed to create session");
+    } finally {
+      setIsCreatingSession(false);
+    }
+  }, [authSession?.user?.learner_id]);
 
   const statusDisplay = STATUS_CONFIG[status];
 
@@ -122,24 +149,19 @@ export default function ChatPage(): JSX.Element {
   }, [messages, isTyping]);
 
   const handleSend = useCallback(
-    (content: string) => {
-      sendMessage(content, isListening);
-    },
+    (content: string) => sendMessage(content, isListening),
     [sendMessage, isListening]
   );
 
   const handleSuggestionClick = useCallback(
-    (suggestion: string) => {
-      sendMessage(suggestion, false);
-    },
+    (suggestion: string) => sendMessage(suggestion, false),
     [sendMessage]
   );
 
   // Handle UI tree form submissions
   const handleUISubmit = useCallback(
     (data: Record<string, unknown>) => {
-      // Extract form ID from action or generate one based on intent
-      const formId = (data._formId as string) || (data._action as string) || "ui-form";
+      const formId = String(data._formId ?? data._action ?? "ui-form");
       sendFormSubmission(formId, data);
     },
     [sendFormSubmission]
@@ -147,22 +169,16 @@ export default function ChatPage(): JSX.Element {
 
   // Practice mode handlers
   const handlePracticeSend = useCallback(
-    (content: string) => {
-      practice.sendMessage(content);
-    },
+    (content: string) => practice.sendMessage(content),
     [practice]
   );
 
   const handleVoiceStart = useCallback(async () => {
-    if (!voiceConnected) {
-      await connectVoice();
-    }
+    if (!voiceConnected) await connectVoice();
     startListening();
   }, [voiceConnected, connectVoice, startListening]);
 
-  const handleVoiceEnd = useCallback(() => {
-    stopListening();
-  }, [stopListening]);
+  const handleVoiceEnd = useCallback(() => stopListening(), [stopListening]);
 
   const handleVoiceOutputToggle = useCallback(async () => {
     const newEnabled = !voiceOutputEnabled;
@@ -182,6 +198,15 @@ export default function ChatPage(): JSX.Element {
     return `${messages.length}-${lastMessage.timestamp ?? "pending"}`;
   }, [messages]);
 
+  // Generate a stable ID for practice messages (character or hint)
+  const lastPracticeVoiceableMessageId = useMemo(() => {
+    if (practice.messages.length === 0) return null;
+    const lastMessage = practice.messages[practice.messages.length - 1];
+    // Voice character responses and hints (not user messages)
+    if (lastMessage.role === "user" || !lastMessage.content) return null;
+    return `practice-${practice.messages.length}-${lastMessage.timestamp}`;
+  }, [practice.messages]);
+
   // Send assistant messages through Grok Voice when voice output is enabled
   useEffect(() => {
     if (!voiceOutputEnabled || !voiceConnected || messages.length === 0) return;
@@ -197,13 +222,47 @@ export default function ChatPage(): JSX.Element {
     }
   }, [messages, voiceOutputEnabled, voiceConnected, sendVoiceText, lastAssistantMessageId]);
 
+  // Send practice messages (character responses and hints) through Grok Voice
+  useEffect(() => {
+    if (!voiceOutputEnabled || !voiceConnected || !practice.isActive) return;
+    if (practice.messages.length === 0) return;
+    if (!lastPracticeVoiceableMessageId) return;
+
+    // Prevent duplicate sends
+    if (lastVoicedMessageIdRef.current === lastPracticeVoiceableMessageId) return;
+
+    const lastMessage = practice.messages[practice.messages.length - 1];
+    // Voice character responses and hints
+    if ((lastMessage.role === "sage-character" || lastMessage.role === "sage-hint") && lastMessage.content) {
+      lastVoicedMessageIdRef.current = lastPracticeVoiceableMessageId;
+      sendVoiceText(lastMessage.content);
+    }
+  }, [practice.messages, practice.isActive, voiceOutputEnabled, voiceConnected, sendVoiceText, lastPracticeVoiceableMessageId]);
+
   return (
     <div className="flex flex-col h-full">
       <CheckInModal
         isOpen={showCheckIn && !sessionContext}
         onClose={() => setShowCheckIn(false)}
         onComplete={handleCheckInComplete}
+        isLoading={isCreatingSession}
       />
+
+      {/* Session creation error banner */}
+      {sessionError && (
+        <div className="px-6 py-3 bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-800">
+          <div className="flex items-center gap-2 text-red-700 dark:text-red-300">
+            <AlertCircle className="h-4 w-4" />
+            <span>{sessionError}</span>
+            <button
+              onClick={() => setSessionError(null)}
+              className="ml-auto text-red-600 dark:text-red-400 hover:underline text-sm"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       <header className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         <div>
