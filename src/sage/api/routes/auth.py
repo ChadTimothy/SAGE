@@ -10,6 +10,7 @@ from pydantic import BaseModel, EmailStr
 from sage.graph.learning_graph import LearningGraph
 from sage.graph.models import Learner, LearnerProfile
 
+from ..auth import CurrentUser, get_current_user
 from ..deps import get_graph
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -235,21 +236,13 @@ async def sync_oauth(
 @router.get("/me", response_model=AuthResponse)
 async def get_current_user_info(
     graph: LearningGraph = Depends(get_graph),
-    user_id: Optional[str] = None,  # Will be injected by auth middleware later
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> AuthResponse:
     """Get current user info.
 
-    NOTE: This endpoint requires authentication (to be added in Step 4).
-    For now it returns a placeholder to test the route structure.
+    Requires JWT authentication via Bearer token.
     """
-    # This will be replaced with proper auth in Step 4
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-
-    user = graph.get_user(user_id)
+    user = graph.get_user(current_user.user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
