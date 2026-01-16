@@ -4,14 +4,12 @@ Tests semantic search capabilities including embedding storage,
 cosine similarity, and integration with the learning graph.
 """
 
-import math
 import pytest
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
-from sage.embeddings.store import EmbeddingStore, EmbeddingRecord, _cosine_similarity
-from sage.embeddings.search import SemanticSearch, SemanticMatch
-from sage.graph.models import Concept, Outcome, ConceptStatus, OutcomeStatus
+from sage.embeddings.store import EmbeddingStore, _cosine_similarity
+from sage.embeddings.search import SemanticSearch
+from sage.graph.models import Concept, Outcome
 from sage.graph.store import GraphStore
 
 

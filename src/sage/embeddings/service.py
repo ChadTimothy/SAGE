@@ -88,9 +88,7 @@ class EmbeddingService:
         Returns:
             Embedding vector
         """
-        text = name
-        if description:
-            text = f"{name}: {description}"
+        text = f"{name}: {description}" if description else name
         return self.embed(text)
 
     def embed_outcome(
@@ -109,9 +107,9 @@ class EmbeddingService:
         Returns:
             Embedding vector
         """
-        parts = [stated_goal]
-        if clarified_goal:
-            parts.append(clarified_goal)
-        if motivation:
-            parts.append(f"Motivation: {motivation}")
-        return self.embed(" | ".join(parts))
+        parts = [
+            stated_goal,
+            clarified_goal,
+            f"Motivation: {motivation}" if motivation else None,
+        ]
+        return self.embed(" | ".join(p for p in parts if p))

@@ -45,11 +45,7 @@ async def extract_filters(request: FilterRequest) -> FilterResponse:
     if result.intent != "filter_graph" or result.confidence < 0.5:
         return FilterResponse(success=False, confidence=result.confidence)
 
-    # Map extracted data to filter state
-    filters: dict[str, Any] = {}
-
     if result.data.get("reset_filters"):
-        # Reset to default state
         filters = {
             "showProvenOnly": False,
             "showConcepts": True,
@@ -58,15 +54,18 @@ async def extract_filters(request: FilterRequest) -> FilterResponse:
             "resetFilters": True,
         }
     else:
-        # Apply individual filter changes
-        if "show_proven_only" in result.data:
-            filters["showProvenOnly"] = result.data["show_proven_only"]
-        if "show_concepts" in result.data:
-            filters["showConcepts"] = result.data["show_concepts"]
-        if "show_outcomes" in result.data:
-            filters["showOutcomes"] = result.data["show_outcomes"]
-        if "text_filter" in result.data:
-            filters["textFilter"] = result.data["text_filter"]
+        # Map snake_case API fields to camelCase frontend fields
+        field_mapping = {
+            "show_proven_only": "showProvenOnly",
+            "show_concepts": "showConcepts",
+            "show_outcomes": "showOutcomes",
+            "text_filter": "textFilter",
+        }
+        filters = {
+            camel: result.data[snake]
+            for snake, camel in field_mapping.items()
+            if snake in result.data
+        }
 
     return FilterResponse(
         success=True,

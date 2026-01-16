@@ -4,17 +4,17 @@ import { useState, useCallback } from "react";
 import { Mic, MicOff, Send, Loader2 } from "lucide-react";
 import type { GraphFilterUpdate } from "@/types";
 
-interface VoiceCommandInputProps {
+interface Props {
   onFilterUpdate: (filters: GraphFilterUpdate) => void;
 }
 
-export function VoiceCommandInput({ onFilterUpdate }: VoiceCommandInputProps): JSX.Element {
+export function VoiceCommandInput({ onFilterUpdate }: Props): JSX.Element {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const extractFilters = useCallback(async (text: string) => {
+  const extractFilters = useCallback(async function extractFilters(text: string) {
     if (!text.trim()) return;
 
     setIsLoading(true);
@@ -46,52 +46,56 @@ export function VoiceCommandInput({ onFilterUpdate }: VoiceCommandInputProps): J
     }
   }, [onFilterUpdate]);
 
-  const handleSubmit = useCallback((e: React.FormEvent) => {
+  const handleSubmit = useCallback(function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     extractFilters(input);
   }, [input, extractFilters]);
 
-  const toggleListening = useCallback(() => {
-    if (isListening) {
-      // Stop listening
-      setIsListening(false);
-      if (window.speechRecognition) {
-        window.speechRecognition.stop();
-      }
-    } else {
-      // Start listening using Web Speech API
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        setError("Speech recognition not supported in this browser");
-        return;
-      }
+  const stopListening = useCallback(function stopListening() {
+    setIsListening(false);
+    window.speechRecognition?.stop();
+  }, []);
 
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = "en-US";
-
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        const transcript = event.results[0][0].transcript;
-        setInput(transcript);
-        extractFilters(transcript);
-      };
-
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        setError(`Speech recognition error: ${event.error}`);
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
-      window.speechRecognition = recognition;
-      recognition.start();
-      setIsListening(true);
-      setError(null);
+  const startListening = useCallback(function startListening() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setError("Speech recognition not supported in this browser");
+      return;
     }
-  }, [isListening, extractFilters]);
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    recognition.onresult = function onResult(event: SpeechRecognitionEvent) {
+      const transcript = event.results[0][0].transcript;
+      setInput(transcript);
+      extractFilters(transcript);
+    };
+
+    recognition.onerror = function onError(event: SpeechRecognitionErrorEvent) {
+      setError(`Speech recognition error: ${event.error}`);
+      setIsListening(false);
+    };
+
+    recognition.onend = function onEnd() {
+      setIsListening(false);
+    };
+
+    window.speechRecognition = recognition;
+    recognition.start();
+    setIsListening(true);
+    setError(null);
+  }, [extractFilters]);
+
+  const toggleListening = useCallback(function toggleListening() {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  }, [isListening, stopListening, startListening]);
 
   return (
     <div className="flex flex-col gap-2">
