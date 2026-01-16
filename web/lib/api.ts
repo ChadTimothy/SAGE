@@ -1,7 +1,10 @@
 /**
  * SAGE API Client
+ *
+ * Includes authentication via NextAuth.js JWT tokens.
  */
 
+import { getAuthToken } from "./auth";
 import type {
   Learner,
   LearnerCreate,
@@ -12,6 +15,10 @@ import type {
   Outcome,
   Proof,
   ApiError,
+  Scenario,
+  ScenarioCreate,
+  ScenarioUpdate,
+  ScenariosListResponse,
 } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -28,15 +35,33 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+
+    // Get auth token and add to headers
+    const token = await getAuthToken();
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      ...options.headers,
+    };
+
+    if (token) {
+      (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+    }
+
     const response = await fetch(url, {
       ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
+      credentials: "include",
+      headers,
     });
 
     if (!response.ok) {
+      // Handle auth errors specially
+      if (response.status === 401) {
+        throw new Error("Not authenticated. Please log in.");
+      }
+      if (response.status === 403) {
+        throw new Error("Access denied. You don't have permission.");
+      }
+
       const error: ApiError = await response.json().catch(() => ({
         detail: `HTTP ${response.status}: ${response.statusText}`,
       }));
@@ -99,13 +124,13 @@ class ApiClient {
   }
 
   // Practice endpoints
+  // Note: learner_id is extracted from JWT token on the backend
   async startPractice(data: {
     scenario_id: string;
     title: string;
     sage_role: string;
     user_role: string;
     description?: string;
-    learner_id?: string;
   }): Promise<{ session_id: string; initial_message: string }> {
     return this.request("/api/practice/start", {
       method: "POST",
@@ -137,6 +162,43 @@ class ApiClient {
   }> {
     return this.request(`/api/practice/${sessionId}/end`, {
       method: "POST",
+    });
+  }
+
+  // ============================================
+  // Scenario Management Endpoints
+  // ============================================
+
+  async listScenarios(includePresets: boolean = true): Promise<ScenariosListResponse> {
+    const params = includePresets ? "?include_presets=true" : "?include_presets=false";
+    return this.request<ScenariosListResponse>(`/api/scenarios${params}`);
+  }
+
+  async listPresetScenarios(): Promise<ScenariosListResponse> {
+    return this.request<ScenariosListResponse>("/api/scenarios/presets");
+  }
+
+  async getScenario(id: string): Promise<Scenario> {
+    return this.request<Scenario>(`/api/scenarios/${id}`);
+  }
+
+  async createScenario(data: ScenarioCreate): Promise<Scenario> {
+    return this.request<Scenario>("/api/scenarios", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateScenario(id: string, data: ScenarioUpdate): Promise<Scenario> {
+    return this.request<Scenario>(`/api/scenarios/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteScenario(id: string): Promise<void> {
+    await this.request(`/api/scenarios/${id}`, {
+      method: "DELETE",
     });
   }
 

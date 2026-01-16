@@ -6,7 +6,18 @@ import type { Learner, LearnerState, LearnerCreate } from "@/types";
 
 const LEARNER_ID_KEY = "sage_learner_id";
 
+/**
+ * @deprecated Use useSessionLearner instead for NextAuth integration.
+ * This hook uses localStorage which is not tied to authentication state.
+ */
 export function useLearner() {
+  // DEPRECATION WARNING
+  if (process.env.NODE_ENV === "development") {
+    console.warn(
+      "useLearner is deprecated. Use useSessionLearner instead for NextAuth integration."
+    );
+  }
+
   const [learner, setLearner] = useState<Learner | null>(null);
   const [state, setState] = useState<LearnerState | null>(null);
   const [isLoading, setIsLoading] = useState(true);

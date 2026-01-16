@@ -15,7 +15,6 @@ export interface UsePracticeModeOptions {
   onPracticeStart?: (scenario: PracticeScenario) => void;
   onPracticeEnd?: (feedback: PracticeFeedbackData) => void;
   onHintRequest?: () => void;
-  learnerId?: string;
 }
 
 export interface UsePracticeModeReturn {
@@ -42,7 +41,6 @@ export function usePracticeMode({
   onPracticeStart,
   onPracticeEnd,
   onHintRequest,
-  learnerId,
 }: UsePracticeModeOptions = {}): UsePracticeModeReturn {
   const [isActive, setIsActive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -70,13 +68,13 @@ export function usePracticeMode({
 
       try {
         // Call backend to start practice session
+        // Backend extracts learner_id from JWT token
         const response = await api.startPractice({
           scenario_id: newScenario.id,
           title: newScenario.title,
           sage_role: newScenario.sageRole,
           user_role: newScenario.userRole,
           description: newScenario.description,
-          learner_id: learnerId,
         });
 
         setScenario(newScenario);
@@ -101,7 +99,7 @@ export function usePracticeMode({
         setIsLoading(false);
       }
     },
-    [learnerId, onPracticeStart]
+    [onPracticeStart]
   );
 
   const sendMessage = useCallback(
