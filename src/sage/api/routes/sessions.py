@@ -1,14 +1,33 @@
 """Session API routes."""
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from sage.graph.learning_graph import LearningGraph
 from sage.graph.models import Session
+from sage.orchestration.normalizer import InputModality
+from sage.orchestration.session_state import (
+    UnifiedSessionState,
+    session_state_manager,
+)
 
 from ..deps import get_graph
 from ..schemas import SessionCreate, SessionEndRequest, SessionResponse
+
+
+class ModalityPreferenceRequest(BaseModel):
+    """Request to update modality preference."""
+
+    modality: InputModality
+
+
+class MergeDataRequest(BaseModel):
+    """Request to merge collected data into session state."""
+
+    data: dict[str, Any]
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -74,3 +93,82 @@ def end_session(
     graph.update_session(session)
 
     return _session_to_response(session)
+
+
+# ============================================================================
+# Cross-Modality State Synchronization Endpoints
+# Part of #81 - Cross-Modality State Synchronization
+# ============================================================================
+
+
+@router.get("/{session_id}/state", response_model=UnifiedSessionState)
+def get_session_state(session_id: str) -> UnifiedSessionState:
+    """Get current unified session state for frontend sync.
+
+    Returns the complete state including:
+    - Modality preference
+    - Pending data collection state
+    - Check-in progress
+    - Message history with modality tags
+
+    This enables the frontend to restore state after page refresh
+    or when switching between modalities.
+    """
+    return session_state_manager.get_or_create(session_id)
+
+
+@router.post("/{session_id}/modality")
+def set_modality_preference(
+    session_id: str,
+    request: ModalityPreferenceRequest,
+) -> dict[str, str]:
+    """Update user's modality preference.
+
+    Called when user explicitly switches between voice and UI modes.
+    """
+    state = session_state_manager.get_or_create(session_id)
+    state.set_modality_preference(request.modality)
+    session_state_manager.update(session_id, state)
+
+    return {"status": "ok", "modality": request.modality.value}
+
+
+@router.post("/{session_id}/merge-data")
+def merge_collected_data(
+    session_id: str,
+    request: MergeDataRequest,
+) -> UnifiedSessionState:
+    """Merge collected data from one modality into the unified state.
+
+    Called when partial data is collected via voice or UI to ensure
+    it's available when switching to the other modality.
+    """
+    state = session_state_manager.get_or_create(session_id)
+    state.merge_collected_data(request.data)
+    session_state_manager.update(session_id, state)
+
+    return state
+
+
+@router.get("/{session_id}/prefill/{intent}")
+def get_prefill_data(
+    session_id: str,
+    intent: str,
+) -> dict[str, Any]:
+    """Get data to prefill UI forms based on intent.
+
+    When a user switches from voice to UI, this provides the
+    already-collected data to prefill the form.
+    """
+    state = session_state_manager.get(session_id)
+    if not state:
+        return {}
+
+    return state.get_prefill_data_for_intent(intent)
+
+
+@router.delete("/{session_id}/state")
+def clear_session_state(session_id: str) -> dict[str, str]:
+    """Clear session state (for logout or session end)."""
+    session_state_manager.delete(session_id)
+    return {"status": "ok"}
