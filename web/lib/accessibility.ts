@@ -75,12 +75,13 @@ export function prefersReducedMotion(): boolean {
 }
 
 /**
- * Voice status labels for screen readers
+ * Voice status messages for screen reader announcements.
+ * Empty string means no announcement for that status.
  */
-export const VOICE_STATUS_LABELS: Record<string, string> = {
-  idle: "Voice input idle",
+export const VOICE_STATUS_MESSAGES: Record<string, string> = {
+  idle: "",
   connecting: "Connecting to voice service",
-  connected: "Voice service connected, ready to listen",
+  connected: "Voice ready",
   listening: "Listening for voice input",
   speaking: "SAGE is speaking",
   reconnecting: "Reconnecting to voice service",
@@ -89,10 +90,11 @@ export const VOICE_STATUS_LABELS: Record<string, string> = {
 };
 
 /**
- * Get accessible label for voice status
+ * Get announcement message for voice status change.
+ * Returns empty string for statuses that should not be announced.
  */
-export function getVoiceStatusLabel(status: string): string {
-  return VOICE_STATUS_LABELS[status] || `Voice status: ${status}`;
+export function getVoiceStatusMessage(status: string): string {
+  return VOICE_STATUS_MESSAGES[status] ?? "";
 }
 
 /**

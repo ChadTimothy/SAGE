@@ -50,13 +50,11 @@ export function TextInput({
     setFormData((prev) => ({ ...prev, [name]: e.target.value }));
   };
 
-  // Build aria-describedby value
-  const describedBy = [
-    description ? descriptionId : null,
-    error ? errorId : null,
-  ]
-    .filter(Boolean)
-    .join(" ") || undefined;
+  const describedByParts = [
+    description && descriptionId,
+    error && errorId,
+  ].filter(Boolean);
+  const describedBy = describedByParts.length > 0 ? describedByParts.join(" ") : undefined;
 
   return (
     <div className={cn("space-y-1.5", className)}>

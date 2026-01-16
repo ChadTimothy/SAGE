@@ -19,6 +19,44 @@ export interface VoiceOutputToggleProps {
   className?: string;
 }
 
+function getStateDescription(
+  hasError: boolean,
+  enabled: boolean,
+  errorMessage?: string
+): string {
+  if (hasError) {
+    return `Voice unavailable. ${errorMessage || "Click to retry."}`;
+  }
+  if (enabled) {
+    return "Voice output enabled. Click to disable.";
+  }
+  return "Voice output disabled. Click to enable.";
+}
+
+function getTitle(hasError: boolean, enabled: boolean, errorMessage?: string): string {
+  if (hasError) {
+    return errorMessage || "Voice unavailable";
+  }
+  return enabled ? "Voice output on" : "Voice output off";
+}
+
+function getButtonLabel(hasError: boolean, enabled: boolean): string {
+  if (hasError) {
+    return "Voice Error";
+  }
+  return enabled ? "Voice On" : "Voice Off";
+}
+
+function VoiceIcon({ hasError, enabled }: { hasError: boolean; enabled: boolean }): JSX.Element {
+  if (hasError) {
+    return <AlertTriangle className="h-4 w-4" aria-hidden="true" />;
+  }
+  if (enabled) {
+    return <Volume2 className="h-4 w-4" aria-hidden="true" />;
+  }
+  return <VolumeX className="h-4 w-4" aria-hidden="true" />;
+}
+
 export function VoiceOutputToggle({
   enabled,
   onToggle,
@@ -28,13 +66,7 @@ export function VoiceOutputToggle({
   className,
 }: VoiceOutputToggleProps): JSX.Element {
   const hasError = error && !enabled;
-
-  // Accessible state description
-  const stateDescription = hasError
-    ? `Voice unavailable. ${errorMessage || "Click to retry."}`
-    : enabled
-    ? "Voice output enabled. Click to disable."
-    : "Voice output disabled. Click to enable.";
+  const stateDescription = getStateDescription(hasError, enabled, errorMessage);
 
   return (
     <button
@@ -56,23 +88,11 @@ export function VoiceOutputToggle({
       aria-label={stateDescription}
       aria-pressed={enabled}
       aria-describedby={hasError ? "voice-error-desc" : undefined}
-      title={
-        hasError
-          ? errorMessage || "Voice unavailable"
-          : enabled
-          ? "Voice output on"
-          : "Voice output off"
-      }
+      title={getTitle(hasError, enabled, errorMessage)}
     >
-      {hasError ? (
-        <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-      ) : enabled ? (
-        <Volume2 className="h-4 w-4" aria-hidden="true" />
-      ) : (
-        <VolumeX className="h-4 w-4" aria-hidden="true" />
-      )}
+      <VoiceIcon hasError={hasError} enabled={enabled} />
       <span className="hidden sm:inline" aria-hidden="true">
-        {hasError ? "Voice Error" : enabled ? "Voice On" : "Voice Off"}
+        {getButtonLabel(hasError, enabled)}
       </span>
       {/* Screen reader only description for error state */}
       {hasError && (

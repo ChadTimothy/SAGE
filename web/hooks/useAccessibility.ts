@@ -10,6 +10,7 @@ import {
   focusFirstInteractive,
   prefersReducedMotion,
   handleKeyboardShortcut,
+  getVoiceStatusMessage,
   type KeyboardShortcut,
 } from "@/lib/accessibility";
 
@@ -33,17 +34,16 @@ export function useReducedMotion(): boolean {
 }
 
 /**
- * Hook for screen reader announcements
+ * Hook for screen reader announcements.
+ * Returns the announceToScreenReader function wrapped in useCallback for stable reference.
  */
-export function useAnnounce() {
-  const announce = useCallback(
+export function useAnnounce(): typeof announceToScreenReader {
+  return useCallback(
     (message: string, priority: "polite" | "assertive" = "polite") => {
       announceToScreenReader(message, priority);
     },
     []
   );
-
-  return announce;
 }
 
 /**
@@ -62,29 +62,20 @@ export function useFocusManagement<T extends HTMLElement>() {
 /**
  * Hook to announce voice status changes
  */
-export function useVoiceStatusAnnouncement(status: string) {
+export function useVoiceStatusAnnouncement(status: string): void {
   const announce = useAnnounce();
   const previousStatus = useRef(status);
 
   useEffect(() => {
-    if (status !== previousStatus.current) {
-      const messages: Record<string, string> = {
-        connecting: "Connecting to voice service",
-        connected: "Voice ready",
-        listening: "Listening for your voice",
-        speaking: "SAGE is speaking",
-        reconnecting: "Reconnecting to voice service",
-        error: "Voice error occurred",
-        fallback: "Voice unavailable, using text input",
-      };
+    if (status === previousStatus.current) return;
 
-      const message = messages[status];
-      if (message) {
-        announce(message, status === "error" ? "assertive" : "polite");
-      }
-
-      previousStatus.current = status;
+    const message = getVoiceStatusMessage(status);
+    if (message) {
+      const priority = status === "error" ? "assertive" : "polite";
+      announce(message, priority);
     }
+
+    previousStatus.current = status;
   }, [status, announce]);
 }
 
