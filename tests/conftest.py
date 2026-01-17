@@ -1,7 +1,8 @@
 """Common test fixtures for SAGE tests."""
 
-import jwt
+import json
 import pytest
+from jose.jwe import encrypt as jwe_encrypt
 from fastapi.testclient import TestClient
 
 from sage.api.deps import get_graph
@@ -17,19 +18,23 @@ from sage.graph.models import (
 )
 
 
-# Test secret for JWT tokens
+# Test secret for JWT tokens (must be at least 32 bytes for JWE)
 TEST_SECRET = "test-secret-key-for-testing-only"
 
 
 def create_test_token(user_id: str, learner_id: str) -> str:
-    """Create a JWT token for testing."""
+    """Create a JWE encrypted token for testing (matches NextAuth format)."""
     payload = {
         "sub": user_id,
         "learner_id": learner_id,
         "email": "test@example.com",
         "name": "Test User",
     }
-    return jwt.encode(payload, TEST_SECRET, algorithm="HS256")
+    # Encrypt as JWE (same format NextAuth uses)
+    return jwe_encrypt(
+        json.dumps(payload).encode("utf-8"),
+        TEST_SECRET.encode("utf-8"),
+    ).decode("utf-8")
 
 
 @pytest.fixture
@@ -61,16 +66,26 @@ def client(test_graph, mock_settings):
     app.dependency_overrides.clear()
 
 
+def create_learner_in_graph(
+    graph: LearningGraph,
+    name: str = "Test Learner",
+    age_group: AgeGroup = AgeGroup.ADULT,
+    skill_level: SkillLevel = SkillLevel.BEGINNER,
+) -> Learner:
+    """Create a learner in the graph with the given attributes."""
+    profile = LearnerProfile(
+        name=name,
+        age_group=age_group,
+        skill_level=skill_level,
+    )
+    learner = Learner(profile=profile)
+    return graph.create_learner(learner)
+
+
 @pytest.fixture
 def test_learner(test_graph):
     """Create test learner."""
-    profile = LearnerProfile(
-        name="Test Learner",
-        age_group=AgeGroup.ADULT,
-        skill_level=SkillLevel.BEGINNER,
-    )
-    learner = Learner(profile=profile)
-    return test_graph.create_learner(learner)
+    return create_learner_in_graph(test_graph)
 
 
 @pytest.fixture
@@ -91,3 +106,16 @@ def auth_headers(test_learner):
 def auth_token(test_learner):
     """Create a JWT token for testing."""
     return create_test_token(test_learner.id, test_learner.id)
+
+
+@pytest.fixture
+def other_learner(test_graph):
+    """Create a second learner for ownership tests."""
+    return create_learner_in_graph(test_graph, name="Other Learner")
+
+
+@pytest.fixture
+def other_auth_headers(other_learner):
+    """Create auth headers for a different user (for ownership tests)."""
+    token = create_test_token(other_learner.id, other_learner.id)
+    return {"Authorization": f"Bearer {token}"}

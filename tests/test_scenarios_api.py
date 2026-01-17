@@ -1,84 +1,12 @@
-"""Tests for SAGE Scenarios API endpoints."""
+"""Tests for SAGE Scenarios API endpoints.
 
-import jwt
+Note: Fixtures for test_graph, client, test_learner, test_session, auth_headers,
+and other_auth_headers are provided by conftest.py
+"""
+
 import pytest
-from fastapi.testclient import TestClient
 
-from sage.api.deps import get_graph
-from sage.api.main import app
-from sage.core.config import get_settings
-from sage.graph.learning_graph import LearningGraph
-from sage.graph.models import (
-    AgeGroup,
-    Learner,
-    LearnerProfile,
-    ScenarioDifficulty,
-    SkillLevel,
-    StoredScenario,
-)
-
-
-# Test secret for JWT tokens
-TEST_SECRET = "test-secret-key-for-testing-only"
-
-
-@pytest.fixture
-def test_graph(tmp_path):
-    """Create test graph with temp database."""
-    db_path = tmp_path / "test.db"
-    return LearningGraph(str(db_path))
-
-
-@pytest.fixture
-def mock_settings(monkeypatch):
-    """Mock settings for testing."""
-    monkeypatch.setenv("NEXTAUTH_SECRET", TEST_SECRET)
-    # Clear cached settings to pick up new env var
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
-
-
-@pytest.fixture
-def client(test_graph, mock_settings):
-    """Create test client with overridden dependencies."""
-
-    def override_get_graph():
-        yield test_graph
-
-    app.dependency_overrides[get_graph] = override_get_graph
-    yield TestClient(app)
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def test_learner(test_graph):
-    """Create test learner."""
-    profile = LearnerProfile(
-        name="Test Learner",
-        age_group=AgeGroup.ADULT,
-        skill_level=SkillLevel.BEGINNER,
-    )
-    learner = Learner(profile=profile)
-    return test_graph.create_learner(learner)
-
-
-def create_test_token(user_id: str, learner_id: str) -> str:
-    """Create a JWT token for testing."""
-    payload = {
-        "sub": user_id,
-        "learner_id": learner_id,
-        "email": "test@example.com",
-        "name": "Test User",
-    }
-    return jwt.encode(payload, TEST_SECRET, algorithm="HS256")
-
-
-@pytest.fixture
-def auth_headers(test_learner):
-    """Create auth headers with valid JWT token."""
-    token = create_test_token(test_learner.id, test_learner.id)
-    return {"Authorization": f"Bearer {token}"}
+from sage.graph.models import ScenarioDifficulty, StoredScenario
 
 
 @pytest.fixture
@@ -226,21 +154,11 @@ class TestGetScenario:
         assert response.status_code == 404
 
     def test_get_other_users_scenario_forbidden(
-        self, client, test_graph, user_scenario
+        self, client, user_scenario, other_auth_headers
     ):
         """Test accessing another user's scenario."""
-        # Create another learner
-        other_profile = LearnerProfile(
-            name="Other Learner",
-            age_group=AgeGroup.ADULT,
-            skill_level=SkillLevel.INTERMEDIATE,
-        )
-        other_learner = test_graph.create_learner(Learner(profile=other_profile))
-        other_token = create_test_token(other_learner.id, other_learner.id)
-        other_headers = {"Authorization": f"Bearer {other_token}"}
-
         response = client.get(
-            f"/api/scenarios/{user_scenario.id}", headers=other_headers
+            f"/api/scenarios/{user_scenario.id}", headers=other_auth_headers
         )
         assert response.status_code == 403
 
@@ -360,21 +278,12 @@ class TestUpdateScenario:
         assert response.status_code == 404
 
     def test_update_other_users_scenario_forbidden(
-        self, client, test_graph, user_scenario
+        self, client, user_scenario, other_auth_headers
     ):
         """Test updating another user's scenario."""
-        other_profile = LearnerProfile(
-            name="Other Learner",
-            age_group=AgeGroup.ADULT,
-            skill_level=SkillLevel.INTERMEDIATE,
-        )
-        other_learner = test_graph.create_learner(Learner(profile=other_profile))
-        other_token = create_test_token(other_learner.id, other_learner.id)
-        other_headers = {"Authorization": f"Bearer {other_token}"}
-
         response = client.patch(
             f"/api/scenarios/{user_scenario.id}",
-            headers=other_headers,
+            headers=other_auth_headers,
             json={"title": "Should Not Work"},
         )
         assert response.status_code == 403
@@ -414,20 +323,11 @@ class TestDeleteScenario:
         assert response.status_code == 404
 
     def test_delete_other_users_scenario_forbidden(
-        self, client, test_graph, user_scenario
+        self, client, user_scenario, other_auth_headers
     ):
         """Test deleting another user's scenario."""
-        other_profile = LearnerProfile(
-            name="Other Learner",
-            age_group=AgeGroup.ADULT,
-            skill_level=SkillLevel.INTERMEDIATE,
-        )
-        other_learner = test_graph.create_learner(Learner(profile=other_profile))
-        other_token = create_test_token(other_learner.id, other_learner.id)
-        other_headers = {"Authorization": f"Bearer {other_token}"}
-
         response = client.delete(
-            f"/api/scenarios/{user_scenario.id}", headers=other_headers
+            f"/api/scenarios/{user_scenario.id}", headers=other_auth_headers
         )
         assert response.status_code == 403
 
