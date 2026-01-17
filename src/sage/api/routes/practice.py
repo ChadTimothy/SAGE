@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -357,7 +358,6 @@ async def end_practice(
 
     # Update session with feedback and end it
     session.practice_feedback = feedback
-    from datetime import datetime
     session.ended_at = datetime.utcnow()
     graph.update_session(session)
 
