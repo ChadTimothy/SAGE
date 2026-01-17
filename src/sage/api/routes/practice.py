@@ -8,7 +8,6 @@ from fastapi import APIRouter, HTTPException
 from openai import OpenAI
 
 from sage.core.config import get_settings
-from sage.graph.learning_graph import LearningGraph
 from sage.graph.models import (
     Message,
     PracticeFeedback,
@@ -24,10 +23,8 @@ from sage.api.schemas import (
     PracticeStartRequest,
     PracticeStartResponse,
 )
-from fastapi import Depends
 
-from ..auth import CurrentUser, get_current_user
-from ..guards import OwnershipVerifier
+from ..deps import Graph, User, Verifier
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +49,6 @@ def _get_llm_client() -> OpenAI:
         api_key=settings.llm_api_key,
         base_url=settings.llm_base_url,
     )
-
-
-def _get_graph() -> LearningGraph:
-    """Get configured learning graph."""
-    settings = get_settings()
-    return LearningGraph(settings.database_url)
 
 
 def _build_character_prompt(
@@ -180,12 +171,11 @@ Keep it to 1-2 sentences. Don't be overly formal unless the scenario calls for i
 @router.post("/start", response_model=PracticeStartResponse)
 async def start_practice(
     request: PracticeStartRequest,
-    user: CurrentUser = Depends(get_current_user),
+    graph: Graph,
+    user: User,
 ) -> PracticeStartResponse:
     """Start a new practice session."""
-    graph = _get_graph()
     client = _get_llm_client()
-    verifier = OwnershipVerifier(graph)
 
     # Use the authenticated user's learner_id
     learner_id = user.learner_id
@@ -225,13 +215,13 @@ async def start_practice(
 async def send_practice_message(
     session_id: str,
     request: PracticeMessageRequest,
-    user: CurrentUser = Depends(get_current_user),
+    graph: Graph,
+    user: User,
+    verifier: Verifier,
 ) -> PracticeMessageResponse:
     """Send a message in practice mode and get character response."""
-    graph = _get_graph()
     client = _get_llm_client()
     settings = get_settings()
-    verifier = OwnershipVerifier(graph)
 
     # Verify ownership and get session
     verifier.verify_session(user, session_id)
@@ -273,13 +263,13 @@ async def send_practice_message(
 @router.post("/{session_id}/hint", response_model=PracticeHintResponse)
 async def get_practice_hint(
     session_id: str,
-    user: CurrentUser = Depends(get_current_user),
+    graph: Graph,
+    user: User,
+    verifier: Verifier,
 ) -> PracticeHintResponse:
     """Get a hint from SAGE during practice."""
-    graph = _get_graph()
     client = _get_llm_client()
     settings = get_settings()
-    verifier = OwnershipVerifier(graph)
 
     verifier.verify_session(user, session_id)
     session = graph.get_session(session_id)
@@ -310,13 +300,13 @@ async def get_practice_hint(
 @router.post("/{session_id}/end", response_model=PracticeFeedbackResponse)
 async def end_practice(
     session_id: str,
-    user: CurrentUser = Depends(get_current_user),
+    graph: Graph,
+    user: User,
+    verifier: Verifier,
 ) -> PracticeFeedbackResponse:
     """End practice session and get feedback."""
-    graph = _get_graph()
     client = _get_llm_client()
     settings = get_settings()
-    verifier = OwnershipVerifier(graph)
 
     verifier.verify_session(user, session_id)
     session = graph.get_session(session_id)
