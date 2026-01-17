@@ -436,7 +436,7 @@ You must respond with valid JSON matching this structure:
     "transition_to": null,  // Mode to switch to, or null to stay in current mode
     "transition_reason": null,  // Why transitioning, or null
     "gap_identified": null,  // If in PROBING and found a gap: {"name": "...", "display_name": "...", "description": "...", "blocking_outcome_id": "..."}
-    "proof_earned": null,  // If in VERIFICATION and they demonstrated understanding: {"concept_id": "...", "demonstration_type": "...", "evidence": "...", "confidence": 0.0-1.0, "exchange": {...}}
+    "proof_earned": null,  // If in VERIFICATION and they demonstrated understanding: {"concept_id": "...", "demonstration_type": "explanation|application|both", "evidence": "...", "confidence": 0.0-1.0, "exchange": {"prompt": "The verification question you asked", "response": "The learner's exact answer", "analysis": "Why this demonstrates understanding"}}
     "connection_discovered": null,  // If you found a connection: {"from_concept_id": "...", "to_concept_id": "...", "relationship": "...", "strength": 0.0-1.0, "used_in_teaching": true/false}
     "application_detected": null,  // If learner mentioned upcoming application: {"context": "...", "concept_ids": [...], "planned_date": "YYYY-MM-DD", "stakes": "high/medium/low"}
     "followup_response": null,  // If in FOLLOWUP and got response: {"event_id": "...", "outcome_result": "...", "what_worked": "...", "what_struggled": "...", "gaps_revealed": [...], "insights": "..."}
