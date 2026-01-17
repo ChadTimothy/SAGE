@@ -5,13 +5,12 @@ Provides CRUD operations for practice scenarios with authentication.
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from sage.graph.models import ScenarioDifficulty, StoredScenario
 
-from ..auth import CurrentUser, get_current_user
-from ..deps import Graph
+from ..deps import Graph, User, Verifier
 
 
 router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
@@ -74,7 +73,7 @@ class ScenariosListResponse(BaseModel):
 @router.get("", response_model=ScenariosListResponse)
 async def list_scenarios(
     graph: Graph,
-    user: CurrentUser = Depends(get_current_user),
+    user: User,
     include_presets: bool = True,
 ) -> ScenariosListResponse:
     """List all scenarios available to the current user."""
@@ -103,17 +102,12 @@ async def list_preset_scenarios(
 async def get_scenario(
     scenario_id: str,
     graph: Graph,
-    user: CurrentUser = Depends(get_current_user),
+    user: User,
+    verifier: Verifier,
 ) -> ScenarioResponse:
     """Get a specific scenario by ID."""
+    verifier.verify_scenario(user, scenario_id)
     scenario = graph.store.get_scenario(scenario_id)
-    if scenario is None:
-        raise HTTPException(status_code=404, detail="Scenario not found")
-
-    # Allow access to preset scenarios or user's own scenarios
-    if not scenario.is_preset and scenario.learner_id != user.learner_id:
-        raise HTTPException(status_code=403, detail="Access denied")
-
     return _to_response(scenario)
 
 
@@ -121,7 +115,7 @@ async def get_scenario(
 async def create_scenario(
     data: ScenarioCreate,
     graph: Graph,
-    user: CurrentUser = Depends(get_current_user),
+    user: User,
 ) -> ScenarioResponse:
     """Create a new custom scenario for the current user."""
     scenario = StoredScenario(
@@ -143,18 +137,12 @@ async def update_scenario(
     scenario_id: str,
     data: ScenarioUpdate,
     graph: Graph,
-    user: CurrentUser = Depends(get_current_user),
+    user: User,
+    verifier: Verifier,
 ) -> ScenarioResponse:
     """Update a custom scenario (only the owner can update)."""
+    verifier.verify_scenario_owner(user, scenario_id)
     scenario = graph.store.get_scenario(scenario_id)
-    if scenario is None:
-        raise HTTPException(status_code=404, detail="Scenario not found")
-
-    if scenario.is_preset:
-        raise HTTPException(status_code=403, detail="Cannot modify preset scenarios")
-
-    if scenario.learner_id != user.learner_id:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     # Apply updates
     if data.title is not None:
@@ -178,22 +166,12 @@ async def update_scenario(
 async def delete_scenario(
     scenario_id: str,
     graph: Graph,
-    user: CurrentUser = Depends(get_current_user),
+    user: User,
+    verifier: Verifier,
 ) -> None:
     """Delete a custom scenario (only the owner can delete)."""
-    scenario = graph.store.get_scenario(scenario_id)
-    if scenario is None:
-        raise HTTPException(status_code=404, detail="Scenario not found")
-
-    if scenario.is_preset:
-        raise HTTPException(status_code=403, detail="Cannot delete preset scenarios")
-
-    if scenario.learner_id != user.learner_id:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    deleted = graph.store.delete_scenario(scenario_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Scenario not found")
+    verifier.verify_scenario_owner(user, scenario_id)
+    graph.store.delete_scenario(scenario_id)
 
 
 # =============================================================================
