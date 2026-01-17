@@ -294,10 +294,16 @@ export function CheckInModal({
                       Just start talking! I&apos;ll gather your check-in through our conversation.
                     </p>
                     <button
-                      onClick={onClose}
-                      className="mt-4 px-6 py-2 text-sage-600 dark:text-sage-400 hover:underline"
+                      onClick={handleSubmit}
+                      disabled={isLoading}
+                      className={cn(
+                        "mt-4 px-6 py-2 rounded-lg transition-colors",
+                        isLoading
+                          ? "text-sage-400 cursor-not-allowed"
+                          : "text-sage-600 dark:text-sage-400 hover:bg-sage-50 dark:hover:bg-sage-900/20"
+                      )}
                     >
-                      Close and start chatting
+                      {isLoading ? "Starting session..." : "Close and start chatting"}
                     </button>
                   </div>
                 )}
