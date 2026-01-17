@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession, signOut } from "next-auth/react";
 import {
   MessageSquare,
   Network,
@@ -11,6 +12,8 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  LogOut,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -83,6 +86,7 @@ export function Sidebar({
 }: SidebarProps): JSX.Element {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const { data: session } = useSession();
 
   return (
     <aside
@@ -137,6 +141,35 @@ export function Sidebar({
           />
         ))}
       </div>
+
+      {session?.user && (
+        <div className="p-2 border-t border-slate-200 dark:border-slate-800">
+          <div
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400",
+              collapsed && "justify-center"
+            )}
+          >
+            <User className="h-5 w-5 flex-shrink-0" />
+            {!collapsed && (
+              <span className="truncate text-sm">
+                {session.user.name || session.user.email}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors w-full",
+              "hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400",
+              collapsed && "justify-center"
+            )}
+          >
+            <LogOut className="h-5 w-5" />
+            {!collapsed && <span>Logout</span>}
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
