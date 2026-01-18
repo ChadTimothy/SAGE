@@ -831,3 +831,197 @@ class TestUIAgentContext:
         assert context["mode"] is None
         assert "energy_level" not in context
         assert "time_available" not in context
+
+
+@pytest.mark.asyncio
+class TestVoiceToFormFieldMapping:
+    """Test voice-to-form field mapping (form_field_updates)."""
+
+    async def test_voice_input_includes_form_field_updates(self, orchestrator, mock_llm_client):
+        """Test voice input returns form_field_updates with extracted values."""
+        # Mock LLM probe generation
+        mock_llm_client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(
+                content="Great, about 30 minutes. How's your energy level?"
+            ))]
+        )
+
+        decision = make_request_more_decision("session_check_in", ["energyLevel"])
+        normalized = NormalizedInput(
+            intent="session_check_in",
+            data={"timeAvailable": "focused"},  # Extracted from voice
+            missing_fields=["energyLevel"],
+            source_modality=InputModality.VOICE,
+            raw_input="I have about 30 minutes",
+        )
+
+        response = await orchestrator._create_data_request_response(decision, normalized)
+
+        # Should include form_field_updates for frontend to fill form
+        assert response.form_field_updates is not None
+        assert response.form_field_updates["timeAvailable"] == "focused"
+
+    async def test_form_modality_no_form_field_updates(self, orchestrator):
+        """Test form modality does not include form_field_updates."""
+        decision = make_request_more_decision("session_check_in", ["energyLevel"])
+        normalized = NormalizedInput(
+            intent="session_check_in",
+            data={"timeAvailable": "focused"},
+            missing_fields=["energyLevel"],
+            source_modality=InputModality.FORM,
+        )
+
+        response = await orchestrator._create_data_request_response(decision, normalized)
+
+        # Form modality should NOT include form_field_updates
+        assert response.form_field_updates is None
+
+    async def test_chat_modality_no_form_field_updates(self, orchestrator, mock_llm_client):
+        """Test chat modality does not include form_field_updates."""
+        mock_llm_client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(
+                content="How much time do you have?"
+            ))]
+        )
+
+        decision = make_request_more_decision("session_check_in", ["timeAvailable"])
+        normalized = NormalizedInput(
+            intent="session_check_in",
+            data={},
+            missing_fields=["timeAvailable"],
+            source_modality=InputModality.CHAT,
+        )
+
+        response = await orchestrator._create_data_request_response(decision, normalized)
+
+        # Chat modality should NOT include form_field_updates
+        assert response.form_field_updates is None
+
+    async def test_hybrid_modality_includes_form_field_updates(self, orchestrator, mock_llm_client):
+        """Test hybrid modality includes form_field_updates."""
+        mock_llm_client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(
+                content="Got it. What difficulty level?"
+            ))]
+        )
+
+        decision = make_request_more_decision("practice_setup", ["scenario_type"])
+        normalized = NormalizedInput(
+            intent="practice_setup",
+            data={"difficulty": "hard"},
+            missing_fields=["scenario_type"],
+            source_modality=InputModality.HYBRID,
+            raw_input="Something hard",
+        )
+
+        response = await orchestrator._create_data_request_response(decision, normalized)
+
+        # Hybrid modality should include form_field_updates
+        assert response.form_field_updates is not None
+        assert response.form_field_updates["difficulty"] == "hard"
+
+    async def test_voice_empty_data_no_form_field_updates(self, orchestrator, mock_llm_client):
+        """Test voice with no extracted data does not include form_field_updates."""
+        mock_llm_client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(
+                content="What would you like to practice?"
+            ))]
+        )
+
+        decision = make_request_more_decision("practice_setup", ["scenario_type"])
+        normalized = NormalizedInput(
+            intent="practice_setup",
+            data={},  # No data extracted
+            missing_fields=["scenario_type"],
+            source_modality=InputModality.VOICE,
+            raw_input="I want to practice",
+        )
+
+        response = await orchestrator._create_data_request_response(decision, normalized)
+
+        # No data means no form_field_updates
+        assert response.form_field_updates is None
+
+    async def test_form_field_updates_in_complete_response(self, orchestrator, mock_llm_client):
+        """Test form_field_updates in _process_with_engine for complete voice data."""
+        # Mock extraction returns complete data
+        mock_llm_client.chat.completions.create.return_value = make_mock_extraction_response(
+            '{"intent": "session_check_in", "data": {"timeAvailable": "focused", "energyLevel": 75}, "confidence": 0.95}'
+        )
+
+        # Mock conversation engine response
+        mock_response = SAGEResponse(
+            message="Great! Let's get started.",
+            current_mode=DialogueMode.CHECK_IN,
+        )
+        orchestrator.conversation_engine.resume_session = MagicMock()
+        orchestrator.conversation_engine.process_turn_streaming = AsyncMock(
+            return_value=mock_response
+        )
+
+        response = await orchestrator.process_input(
+            raw_input="I have about 30 minutes and feeling pretty good",
+            source_modality=InputModality.VOICE,
+            session_id="form-updates-session",
+        )
+
+        # Response should include form_field_updates from voice extraction
+        assert response.form_field_updates is not None
+        assert response.form_field_updates["timeAvailable"] == "focused"
+        assert response.form_field_updates["energyLevel"] == 75
+
+    async def test_form_field_updates_multiple_fields(self, orchestrator, mock_llm_client):
+        """Test form_field_updates includes all extracted fields."""
+        mock_llm_client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(
+                content="Got it. What's your mindset like?"
+            ))]
+        )
+
+        decision = make_request_more_decision("session_check_in", ["mindset"])
+        normalized = NormalizedInput(
+            intent="session_check_in",
+            data={
+                "timeAvailable": "deep",
+                "energyLevel": 85,
+            },
+            missing_fields=["mindset"],
+            source_modality=InputModality.VOICE,
+            raw_input="I have plenty of time and feeling great",
+        )
+
+        response = await orchestrator._create_data_request_response(decision, normalized)
+
+        # Should include all extracted fields
+        assert response.form_field_updates is not None
+        assert response.form_field_updates["timeAvailable"] == "deep"
+        assert response.form_field_updates["energyLevel"] == 85
+        assert "mindset" not in response.form_field_updates  # Not yet extracted
+
+    async def test_form_field_updates_field_names_match_schema(self, orchestrator, mock_llm_client):
+        """Test form_field_updates field names match FORM_SCHEMAS."""
+        from sage.orchestration.normalizer import FORM_SCHEMAS
+
+        mock_llm_client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(
+                content="What type of scenario?"
+            ))]
+        )
+
+        decision = make_request_more_decision("practice_setup", ["scenario_type"])
+        normalized = NormalizedInput(
+            intent="practice_setup",
+            data={"difficulty": "medium", "focus_area": "negotiation"},
+            missing_fields=["scenario_type"],
+            source_modality=InputModality.VOICE,
+        )
+
+        response = await orchestrator._create_data_request_response(decision, normalized)
+
+        # Field names should match FORM_SCHEMAS
+        schema_fields = (
+            FORM_SCHEMAS["practice_setup"]["required"] +
+            FORM_SCHEMAS["practice_setup"]["optional"]
+        )
+        for field_name in response.form_field_updates:
+            assert field_name in schema_fields, f"Field {field_name} not in schema"

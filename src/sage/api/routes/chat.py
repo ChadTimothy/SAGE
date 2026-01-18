@@ -117,6 +117,7 @@ def _response_to_dict(response: Union[SAGEResponse, ExtendedSAGEResponse]) -> di
         "ui_tree": None,
         "voice_hints": None,
         "pending_data_request": None,
+        "form_field_updates": None,
         "ui_purpose": None,
         "estimated_interaction_time": None,
         "graph_filter_update": None,
@@ -131,6 +132,10 @@ def _response_to_dict(response: Union[SAGEResponse, ExtendedSAGEResponse]) -> di
     for field in ("ui_purpose", "estimated_interaction_time"):
         if hasattr(response, field):
             result[field] = getattr(response, field)
+
+    # form_field_updates is a plain dict, assign directly
+    if hasattr(response, "form_field_updates") and response.form_field_updates:
+        result["form_field_updates"] = response.form_field_updates
 
     return result
 
