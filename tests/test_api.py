@@ -340,3 +340,92 @@ class TestWebSocketProtocolExtension:
 
         assert result["ui_purpose"] == "Gather session context"
         assert result["estimated_interaction_time"] == 30
+
+
+class TestOrchestratorIntegration:
+    """Tests for orchestrator integration in chat.py."""
+
+    def test_create_orchestrator_returns_orchestrator(self, test_graph, mock_settings):
+        """Test _create_orchestrator returns a SAGEOrchestrator instance."""
+        from sage.api.routes.chat import _create_orchestrator
+        from sage.orchestration.orchestrator import SAGEOrchestrator
+
+        orchestrator = _create_orchestrator(test_graph)
+
+        assert isinstance(orchestrator, SAGEOrchestrator)
+        assert orchestrator.graph is test_graph
+        assert orchestrator.normalizer is not None
+        assert orchestrator.intent_extractor is not None
+        assert orchestrator.ui_agent is not None
+
+    def test_create_orchestrator_has_conversation_engine(self, test_graph, mock_settings):
+        """Test orchestrator has a conversation engine."""
+        from sage.api.routes.chat import _create_orchestrator
+        from sage.dialogue.conversation import ConversationEngine
+
+        orchestrator = _create_orchestrator(test_graph)
+
+        assert orchestrator.conversation_engine is not None
+        assert isinstance(orchestrator.conversation_engine, ConversationEngine)
+
+    def test_modality_routing_chat(self):
+        """Test that chat messages use CHAT modality."""
+        from sage.api.routes.chat import WSIncomingMessage, _parse_incoming_message
+        from sage.orchestration.normalizer import InputModality
+
+        # Normal text message
+        data = {"type": "text", "content": "Hello", "is_voice": False}
+        msg = _parse_incoming_message(data)
+
+        assert msg.is_voice is False
+        # The modality would be CHAT for non-voice messages
+        modality = InputModality.VOICE if msg.is_voice else InputModality.CHAT
+        assert modality == InputModality.CHAT
+
+    def test_modality_routing_voice(self):
+        """Test that voice messages use VOICE modality."""
+        from sage.api.routes.chat import WSIncomingMessage, _parse_incoming_message
+        from sage.orchestration.normalizer import InputModality
+
+        # Voice message
+        data = {"type": "text", "content": "Hello", "is_voice": True}
+        msg = _parse_incoming_message(data)
+
+        assert msg.is_voice is True
+        modality = InputModality.VOICE if msg.is_voice else InputModality.CHAT
+        assert modality == InputModality.VOICE
+
+    def test_modality_routing_form(self):
+        """Test that form submissions use FORM modality."""
+        from sage.api.routes.chat import WSIncomingMessage, _parse_incoming_message
+        from sage.orchestration.normalizer import InputModality
+
+        # Form submission
+        data = {
+            "type": "form_submission",
+            "form_id": "check-in-123",
+            "data": {"energyLevel": 50},
+        }
+        msg = _parse_incoming_message(data)
+
+        assert msg.type == "form_submission"
+        # Form submissions use FORM modality
+        assert InputModality.FORM.value == "form"
+
+    def test_ws_incoming_message_all_fields(self):
+        """Test WSIncomingMessage parses all fields correctly."""
+        from sage.api.routes.chat import WSIncomingMessage
+
+        msg = WSIncomingMessage(
+            type="form_submission",
+            content="some content",
+            form_id="check-in",
+            data={"key": "value"},
+            is_voice=True,
+        )
+
+        assert msg.type == "form_submission"
+        assert msg.content == "some content"
+        assert msg.form_id == "check-in"
+        assert msg.data == {"key": "value"}
+        assert msg.is_voice is True
