@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { createChatConnection, type ChatWebSocket } from "@/lib/websocket";
+import { formatFormDataAsMessage } from "@/lib/utils";
 import type { ChatMessage, DialogueMode, WSCompleteMessage } from "@/types";
 
 interface UseChatOptions {
@@ -45,6 +46,7 @@ export function useChat({ sessionId, enabled = true, onMessage, onError }: UseCh
         mode: response.mode as DialogueMode,
         ui_tree: response.ui_tree ?? undefined,
         pending_data_request: response.pending_data_request ?? undefined,
+        form_field_updates: response.form_field_updates ?? undefined,
       };
 
       setMessages((prev) => [...prev, chatMessage]);
@@ -119,6 +121,14 @@ export function useChat({ sessionId, enabled = true, onMessage, onError }: UseCh
         return;
       }
 
+      // Add a readable user message for form submission (TTS-friendly)
+      const messageContent = formatFormDataAsMessage(formId, data);
+      const userMessage: ChatMessage = {
+        role: "user",
+        content: messageContent,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, userMessage]);
       setIsTyping(true);
       wsRef.current.sendFormSubmission(formId, data);
     },

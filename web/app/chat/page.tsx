@@ -362,6 +362,7 @@ export default function ChatPage(): JSX.Element {
                     mode={message.mode}
                     ui_tree={message.ui_tree}
                     onUISubmit={handleUISubmit}
+                    form_field_updates={message.form_field_updates}
                   />
                 ))}
               </AnimatePresence>

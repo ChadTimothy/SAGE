@@ -16,6 +16,8 @@ export interface MessageBubbleProps {
   ui_tree?: UITreeNode;
   /** Callback when UI form is submitted */
   onUISubmit?: (data: Record<string, unknown>) => void;
+  /** Extracted values from voice input to prefill form fields */
+  form_field_updates?: Record<string, unknown>;
 }
 
 const ANIMATION_CONFIG = {
@@ -32,6 +34,7 @@ export function MessageBubble({
   mode,
   ui_tree,
   onUISubmit,
+  form_field_updates,
 }: MessageBubbleProps): JSX.Element {
   const isUser = role === "user";
   const formattedTime = formatTime(timestamp);
@@ -90,7 +93,11 @@ export function MessageBubble({
         {/* Render UI tree for ad-hoc UI generation */}
         {!isUser && ui_tree && (
           <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
-            <UITreeForm tree={ui_tree} onSubmit={handleUISubmit} />
+            <UITreeForm
+              tree={ui_tree}
+              onSubmit={handleUISubmit}
+              initialData={form_field_updates}
+            />
           </div>
         )}
 
