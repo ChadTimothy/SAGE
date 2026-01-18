@@ -1,5 +1,6 @@
 "use client";
 
+import { forwardRef } from "react";
 import { motion } from "framer-motion";
 import { cn, formatTime, formatDialogueMode } from "@/lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
@@ -26,16 +27,20 @@ const ANIMATION_CONFIG = {
   transition: { duration: 0.2 },
 };
 
-export function MessageBubble({
-  role,
-  content,
-  timestamp,
-  isStreaming = false,
-  mode,
-  ui_tree,
-  onUISubmit,
-  form_field_updates,
-}: MessageBubbleProps): JSX.Element {
+export const MessageBubble = forwardRef<HTMLDivElement, MessageBubbleProps>(
+  function MessageBubble(
+    {
+      role,
+      content,
+      timestamp,
+      isStreaming = false,
+      mode,
+      ui_tree,
+      onUISubmit,
+      form_field_updates,
+    },
+    ref
+  ) {
   const isUser = role === "user";
   const formattedTime = formatTime(timestamp);
 
@@ -112,4 +117,5 @@ export function MessageBubble({
       </div>
     </motion.div>
   );
-}
+  }
+);
