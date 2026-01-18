@@ -1,5 +1,6 @@
 "use client";
 
+import { forwardRef } from "react";
 import { motion } from "framer-motion";
 import { cn, formatTime } from "@/lib/utils";
 import { MarkdownContent } from "@/components/chat/MarkdownContent";
@@ -18,13 +19,13 @@ const ANIMATION_CONFIG = {
   transition: { duration: 0.2 },
 };
 
-export function PracticeMessageBubble({
-  role,
-  characterName,
-  content,
-  timestamp,
-  isStreaming = false,
-}: PracticeMessageBubbleProps): JSX.Element {
+export const PracticeMessageBubble = forwardRef<
+  HTMLDivElement,
+  PracticeMessageBubbleProps
+>(function PracticeMessageBubble(
+  { role, characterName, content, timestamp, isStreaming = false },
+  ref
+) {
   const isUser = role === "user";
   const isHint = role === "sage-hint";
   const formattedTime = formatTime(timestamp);
@@ -86,4 +87,4 @@ export function PracticeMessageBubble({
       </div>
     </motion.div>
   );
-}
+});
