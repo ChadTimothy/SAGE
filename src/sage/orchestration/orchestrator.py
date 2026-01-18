@@ -282,9 +282,19 @@ class SAGEOrchestrator:
 
         For form modality: Returns structured validation messages
         For voice/chat: Generates conversational follow-up using LLM
+
+        When voice input extracts form field values, includes form_field_updates
+        so the frontend can update the form visually (voice/UI parity).
         """
         is_check_in = normalized.intent == "session_check_in"
         current_mode = DialogueMode.CHECK_IN if is_check_in else DialogueMode.PROBING
+
+        # Determine if we should include form_field_updates for voice-to-form mapping
+        form_field_updates = None
+        if normalized.source_modality in (InputModality.VOICE, InputModality.HYBRID):
+            # Voice input extracted values - include for form field visual updates
+            if normalized.data:
+                form_field_updates = normalized.data.copy()
 
         # Form modality: use template-based validation messages
         if normalized.source_modality == InputModality.FORM:
@@ -304,6 +314,7 @@ class SAGEOrchestrator:
             message=message,
             current_mode=current_mode,
             pending_data_request=decision.pending_data_request,
+            form_field_updates=form_field_updates,
         )
 
     async def _generate_conversational_probe(
@@ -384,6 +395,13 @@ class SAGEOrchestrator:
                 logger.warning(f"UI generation failed, continuing without UI: {e}")
                 # Continue without UI tree - graceful degradation
 
+        # Include form_field_updates for voice-to-form mapping when voice input
+        # extracted data (enables visual form filling for modality parity)
+        form_field_updates = None
+        if normalized.source_modality in (InputModality.VOICE, InputModality.HYBRID):
+            if normalized.data:
+                form_field_updates = normalized.data.copy()
+
         return ExtendedSAGEResponse(
             message=base_response.message,
             current_mode=base_response.current_mode,
@@ -404,6 +422,7 @@ class SAGEOrchestrator:
             voice_hints=voice_hints,
             ui_purpose=ui_purpose,
             estimated_interaction_time=estimated_interaction_time,
+            form_field_updates=form_field_updates,
         )
 
     def _build_ui_generation_context(

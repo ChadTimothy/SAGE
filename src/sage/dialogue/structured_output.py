@@ -266,6 +266,7 @@ class ExtendedSAGEResponse(SAGEResponse):
     - ui_tree: Composable UI tree for ad-hoc UI generation
     - voice_hints: TTS optimization hints
     - pending_data_request: State for multi-turn data collection
+    - form_field_updates: Voice-to-form field mapping for visual form filling
 
     The UI Generation Agent creates ui_tree from ~15 primitive
     components, enabling any UI to be generated dynamically.
@@ -284,6 +285,14 @@ class ExtendedSAGEResponse(SAGEResponse):
     # === DATA COLLECTION STATE ===
     pending_data_request: Optional[PendingDataRequest] = Field(
         default=None, description="Incomplete data collection state"
+    )
+
+    # === VOICE-TO-FORM FIELD MAPPING ===
+    form_field_updates: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Extracted values from voice input to update form fields visually. "
+        "Keys are form field IDs, values are the extracted data. "
+        "Frontend should use these to prefill form fields when present.",
     )
 
     # === UI METADATA ===

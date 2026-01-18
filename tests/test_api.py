@@ -429,3 +429,74 @@ class TestOrchestratorIntegration:
         assert msg.form_id == "check-in"
         assert msg.data == {"key": "value"}
         assert msg.is_voice is True
+
+
+class TestFormFieldUpdates:
+    """Tests for form_field_updates in response serialization."""
+
+    def test_response_to_dict_includes_form_field_updates(self):
+        """Test _response_to_dict includes form_field_updates when present."""
+        from sage.api.routes.chat import _response_to_dict
+        from sage.dialogue.structured_output import ExtendedSAGEResponse
+        from sage.graph.models import DialogueMode
+
+        response = ExtendedSAGEResponse(
+            message="Got it, 30 minutes.",
+            current_mode=DialogueMode.CHECK_IN,
+            form_field_updates={"timeAvailable": "focused", "energyLevel": 75},
+        )
+
+        result = _response_to_dict(response)
+
+        assert result["form_field_updates"] is not None
+        assert result["form_field_updates"]["timeAvailable"] == "focused"
+        assert result["form_field_updates"]["energyLevel"] == 75
+
+    def test_response_to_dict_no_form_field_updates(self):
+        """Test _response_to_dict handles missing form_field_updates."""
+        from sage.api.routes.chat import _response_to_dict
+        from sage.dialogue.structured_output import ExtendedSAGEResponse
+        from sage.graph.models import DialogueMode
+
+        response = ExtendedSAGEResponse(
+            message="Hello",
+            current_mode=DialogueMode.CHECK_IN,
+        )
+
+        result = _response_to_dict(response)
+
+        # Should be None when not present
+        assert result["form_field_updates"] is None
+
+    def test_response_to_dict_empty_form_field_updates(self):
+        """Test _response_to_dict handles empty form_field_updates."""
+        from sage.api.routes.chat import _response_to_dict
+        from sage.dialogue.structured_output import ExtendedSAGEResponse
+        from sage.graph.models import DialogueMode
+
+        response = ExtendedSAGEResponse(
+            message="Hello",
+            current_mode=DialogueMode.CHECK_IN,
+            form_field_updates={},  # Empty dict
+        )
+
+        result = _response_to_dict(response)
+
+        # Empty dict is falsy, so should be None
+        assert result["form_field_updates"] is None
+
+    def test_response_to_dict_sage_response_no_form_field_updates(self):
+        """Test _response_to_dict handles SAGEResponse (no form_field_updates attr)."""
+        from sage.api.routes.chat import _response_to_dict
+        from sage.dialogue.structured_output import SAGEResponse
+        from sage.graph.models import DialogueMode
+
+        response = SAGEResponse(
+            message="Hello",
+            current_mode=DialogueMode.CHECK_IN,
+        )
+
+        result = _response_to_dict(response)
+
+        # SAGEResponse doesn't have form_field_updates, should be None
+        assert result["form_field_updates"] is None
