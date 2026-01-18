@@ -2,6 +2,8 @@
 
 import json
 import pytest
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
 from jose.jwe import encrypt as jwe_encrypt
 from fastapi.testclient import TestClient
 
@@ -22,6 +24,17 @@ from sage.graph.models import (
 TEST_SECRET = "test-secret-key-for-testing-only"
 
 
+def _derive_test_key(secret: str) -> bytes:
+    """Derive encryption key using HKDF (matches NextAuth v4)."""
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,  # 32 bytes for A256GCM
+        salt=b"",  # Empty salt for NextAuth v4
+        info=b"NextAuth.js Generated Encryption Key",
+    )
+    return hkdf.derive(secret.encode("utf-8"))
+
+
 def create_test_token(user_id: str, learner_id: str) -> str:
     """Create a JWE encrypted token for testing (matches NextAuth format)."""
     payload = {
@@ -30,10 +43,12 @@ def create_test_token(user_id: str, learner_id: str) -> str:
         "email": "test@example.com",
         "name": "Test User",
     }
+    # Derive key using HKDF (same as NextAuth v4 and our backend)
+    derived_key = _derive_test_key(TEST_SECRET)
     # Encrypt as JWE (same format NextAuth uses)
     return jwe_encrypt(
         json.dumps(payload).encode("utf-8"),
-        TEST_SECRET.encode("utf-8"),
+        derived_key,
     ).decode("utf-8")
 
 
