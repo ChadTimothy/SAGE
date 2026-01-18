@@ -291,9 +291,22 @@ class TestVoiceInputStorage:
         assert form_context.energy == voice_context.energy
         assert form_context.mindset == voice_context.mindset
 
-    def test_voice_fills_form_visually_via_form_field_updates(self):
-        """Voice input returns form_field_updates for visual form filling."""
-        # Create decision for request_more with form_field_updates
+    async def test_voice_fills_form_visually_via_form_field_updates(
+        self, orchestrator, mock_llm_client
+    ):
+        """Voice input returns form_field_updates for visual form filling.
+
+        This test verifies the orchestrator actually returns form_field_updates
+        in its response when processing voice input with extracted data.
+        """
+        # Mock LLM probe generation for the data request
+        mock_llm_client.chat.completions.create.return_value = MagicMock(
+            choices=[MagicMock(message=MagicMock(
+                content="Got it, 30 minutes and feeling curious. What's your energy level?"
+            ))]
+        )
+
+        # Create decision for request_more
         decision = OrchestratorDecision(
             action="request_more",
             output_strategy=OutputStrategy.HYBRID,
@@ -312,13 +325,13 @@ class TestVoiceInputStorage:
             raw_input="I have about 30 minutes and I'm curious today",
         )
 
-        # form_field_updates should contain the extracted data
-        # This allows frontend to prefill form fields visually
-        form_field_updates = normalized.data.copy()
+        # Actually call the orchestrator to get the response
+        response = await orchestrator._create_data_request_response(decision, normalized)
 
-        assert form_field_updates is not None
-        assert form_field_updates["timeAvailable"] == "focused"
-        assert form_field_updates["mindset"] == "curious"
+        # form_field_updates should contain the extracted data for frontend to fill form
+        assert response.form_field_updates is not None
+        assert response.form_field_updates["timeAvailable"] == "focused"
+        assert response.form_field_updates["mindset"] == "curious"
 
 
 # =============================================================================
