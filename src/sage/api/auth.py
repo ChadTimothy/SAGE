@@ -1,19 +1,29 @@
-"""Authentication utilities for SAGE API."""
+"""Authentication utilities for SAGE API.
+
+Supports two authentication methods:
+1. NextAuth JWE tokens (from web app)
+2. OAuth 2.1 JWT tokens (from ChatGPT App via MCP)
+"""
 
 import json
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
-from jose import jwe
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from fastapi import HTTPException, Request, WebSocket, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPBearer
+from jose import JWTError, jwe, jwt
 
 from sage.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# NextAuth session cookie names (standard and secure variants)
+NEXTAUTH_COOKIE_NAMES = [
+    "next-auth.session-token",
+    "__Secure-next-auth.session-token",
+]
 
 
 def _derive_nextauth_key(secret: str) -> bytes:
@@ -37,10 +47,44 @@ def _derive_nextauth_key(secret: str) -> bytes:
 class CurrentUser:
     """Authenticated user context."""
 
-    user_id: str  # From auth provider (sub claim)
-    learner_id: str  # SAGE learner ID (linked)
-    email: Optional[str] = None
-    name: Optional[str] = None
+    user_id: str
+    learner_id: str
+    email: str | None = None
+    name: str | None = None
+    source: str = "web"
+
+
+def _verify_oauth_token(token: str) -> CurrentUser:
+    """Verify an OAuth 2.1 JWT token from ChatGPT MCP."""
+    settings = get_settings()
+    signing_key = getattr(settings, "oauth_signing_key", None) or settings.nextauth_secret
+
+    if not signing_key:
+        raise _auth_error("OAuth signing key not configured")
+
+    try:
+        payload = jwt.decode(
+            token,
+            signing_key,
+            algorithms=["HS256"],
+            options={"verify_aud": False},
+        )
+    except JWTError as e:
+        logger.error(f"OAuth JWT validation failed: {e}")
+        raise _auth_error(f"Invalid OAuth token: {e}")
+
+    if "sub" not in payload:
+        raise _auth_error("Token missing user ID")
+    if "learner_id" not in payload:
+        raise _auth_error("Token missing learner ID")
+
+    return CurrentUser(
+        user_id=payload["sub"],
+        learner_id=payload["learner_id"],
+        email=payload.get("email"),
+        name=payload.get("name"),
+        source=payload.get("source", "chatgpt"),
+    )
 
 
 def _auth_error(detail: str) -> HTTPException:
@@ -50,6 +94,14 @@ def _auth_error(detail: str) -> HTTPException:
         detail=detail,
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def _get_session_cookie(cookies: dict[str, str]) -> str | None:
+    """Extract NextAuth session token from cookies."""
+    for name in NEXTAUTH_COOKIE_NAMES:
+        if token := cookies.get(name):
+            return token
+    return None
 
 
 class JWTBearer(HTTPBearer):
@@ -65,31 +117,27 @@ class JWTBearer(HTTPBearer):
             self._settings = get_settings()
         return self._settings
 
-    async def __call__(self, request: Request) -> Optional[CurrentUser]:
-        # First try Authorization header
+    async def __call__(self, request: Request) -> CurrentUser | None:
         auth_header = request.headers.get("Authorization", "")
 
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header[7:]  # Strip "Bearer " prefix
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
             return self._verify_token(token)
 
-        # Fall back to NextAuth session cookie (httpOnly cookie can't be read by JS)
-        # NextAuth uses "next-auth.session-token" or "__Secure-next-auth.session-token"
-        token = request.cookies.get("next-auth.session-token")
-        if not token:
-            token = request.cookies.get("__Secure-next-auth.session-token")
-
+        token = _get_session_cookie(request.cookies)
         if token:
             return self._verify_token(token)
+
         if self.auto_error:
             raise _auth_error("Not authenticated")
         return None
 
     def _verify_token(self, token: str) -> CurrentUser:
-        """Verify encrypted JWT (JWE) from NextAuth and extract user context.
+        """Verify token and extract user context.
 
-        NextAuth v4 encrypts JWT tokens using JWE (JSON Web Encryption).
-        The encryption key is derived from NEXTAUTH_SECRET using HKDF.
+        Detects token format automatically:
+        - JWT (3 parts): OAuth 2.1 signed token from ChatGPT MCP
+        - JWE (5 parts): NextAuth encrypted token from web app
         """
         if not self.settings.nextauth_secret:
             raise HTTPException(
@@ -97,36 +145,42 @@ class JWTBearer(HTTPBearer):
                 detail="Authentication not configured",
             )
 
+        token_parts = token.split(".")
+        is_jwt_format = len(token_parts) == 3
+
+        if is_jwt_format:
+            try:
+                return _verify_oauth_token(token)
+            except HTTPException:
+                logger.debug("OAuth JWT verification failed, trying NextAuth JWE")
+
+        return self._verify_nextauth_token(token)
+
+    def _verify_nextauth_token(self, token: str) -> CurrentUser:
+        """Verify a NextAuth JWE token."""
         try:
-            # Derive the encryption key using HKDF (same as NextAuth v4)
             derived_key = _derive_nextauth_key(self.settings.nextauth_secret)
             decrypted = jwe.decrypt(token, derived_key)
             payload = json.loads(decrypted)
-
-            # Validate required claims
-            if "sub" not in payload:
-                raise _auth_error("Token missing user ID")
-            if "learner_id" not in payload:
-                raise _auth_error("Token missing learner ID")
-
-            return CurrentUser(
-                user_id=payload["sub"],
-                learner_id=payload["learner_id"],
-                email=payload.get("email"),
-                name=payload.get("name"),
-            )
-
         except jwe.JWEError as e:
             logger.error(f"JWE decryption failed: {e}")
             raise _auth_error(f"Token decryption failed: {e}")
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode failed: {e}")
             raise _auth_error("Invalid token payload")
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Auth exception: {type(e).__name__}: {e}")
-            raise _auth_error(f"Authentication failed: {e}")
+
+        if "sub" not in payload:
+            raise _auth_error("Token missing user ID")
+        if "learner_id" not in payload:
+            raise _auth_error("Token missing learner ID")
+
+        return CurrentUser(
+            user_id=payload["sub"],
+            learner_id=payload["learner_id"],
+            email=payload.get("email"),
+            name=payload.get("name"),
+            source="web",
+        )
 
 
 # Singleton instances for dependency injection
@@ -139,26 +193,16 @@ async def get_current_user(request: Request) -> CurrentUser:
     return await jwt_bearer(request)
 
 
-async def get_current_user_optional(request: Request) -> Optional[CurrentUser]:
+async def get_current_user_optional(request: Request) -> CurrentUser | None:
     """Dependency that optionally extracts current user."""
     return await jwt_bearer_optional(request)
 
 
 async def get_current_user_ws(websocket: WebSocket) -> CurrentUser:
-    """Extract user from WebSocket connection.
-
-    WebSocket auth supports:
-    1. Query parameter: ?token=xxx
-    2. Session cookies (httpOnly cookies from NextAuth)
-    """
-    # First try query parameter
+    """Extract user from WebSocket connection."""
     token = websocket.query_params.get("token")
-
-    # Fall back to NextAuth session cookies
     if not token:
-        token = websocket.cookies.get("next-auth.session-token")
-    if not token:
-        token = websocket.cookies.get("__Secure-next-auth.session-token")
+        token = _get_session_cookie(websocket.cookies)
 
     if not token:
         await websocket.close(code=4001, reason="Authentication required")
