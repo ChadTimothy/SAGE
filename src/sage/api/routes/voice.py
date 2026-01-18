@@ -42,7 +42,11 @@ class VoiceConnectionManager:
 
         try:
             url = f"{GROK_REALTIME_URL}?model=grok-2-voice"
-            ws = await websockets.connect(url)
+            # API key must be passed in headers during WebSocket handshake
+            ws = await websockets.connect(
+                url,
+                additional_headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+            )
             self.grok_connections[session_id] = ws
             self.voice_settings[session_id] = voice
 
@@ -60,12 +64,6 @@ class VoiceConnectionManager:
                         "silence_duration_ms": 500,
                     },
                 },
-            }))
-
-            # Authenticate with server-side key
-            await ws.send(json.dumps({
-                "type": "auth",
-                "api_key": settings.llm_api_key,
             }))
 
             logger.info(f"Grok voice connected: {session_id}")
