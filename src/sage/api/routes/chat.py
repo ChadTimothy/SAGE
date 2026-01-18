@@ -1,18 +1,18 @@
 """WebSocket chat handler for streaming responses."""
 
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from sage.core.config import get_settings
-from sage.dialogue.conversation import ConversationEngine
-from sage.dialogue.structured_output import SAGEResponse
+from sage.dialogue.structured_output import ExtendedSAGEResponse, SAGEResponse
 from sage.graph.learning_graph import LearningGraph
+from sage.orchestration.normalizer import InputModality
+from sage.orchestration.orchestrator import SAGEOrchestrator
 
 from ..auth import get_current_user_ws
-from ..guards import OwnershipVerifier
 
 logger = logging.getLogger(__name__)
 
@@ -75,20 +75,26 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def _create_engine(graph: LearningGraph) -> ConversationEngine:
-    """Create conversation engine with settings."""
+def _create_orchestrator(graph: LearningGraph) -> SAGEOrchestrator:
+    """Create SAGE orchestrator with settings."""
     settings = get_settings()
-    from sage.dialogue.conversation import create_conversation_engine
-    return create_conversation_engine(
-        graph=graph,
+    from openai import OpenAI
+
+    llm_client = OpenAI(
         api_key=settings.llm_api_key,
         base_url=settings.llm_base_url,
-        model=settings.llm_model,
+    )
+
+    return SAGEOrchestrator(
+        graph=graph,
+        llm_client=llm_client,
+        extraction_model=settings.llm_model,
+        ui_generation_model="grok-2",
     )
 
 
-def _response_to_dict(response: SAGEResponse) -> dict:
-    """Convert SAGEResponse to JSON-serializable dict."""
+def _response_to_dict(response: Union[SAGEResponse, ExtendedSAGEResponse]) -> dict:
+    """Convert SAGEResponse or ExtendedSAGEResponse to JSON-serializable dict."""
     gap = response.gap_identified
     proof = response.proof_earned
 
@@ -148,7 +154,6 @@ async def websocket_chat(
         return  # Connection already closed by get_current_user_ws
 
     # Verify session ownership
-    verifier = OwnershipVerifier(graph)
     session = graph.get_session(session_id)
 
     if session:
@@ -167,17 +172,10 @@ async def websocket_chat(
     await manager.connect(session_id, websocket)
     logger.info(f"WebSocket connected for session {session_id}")
 
-    engine = _create_engine(graph)
+    orchestrator = _create_orchestrator(graph)
 
     try:
-        engine.resume_session(session_id)
-    except ValueError as e:
-        await manager.send_error(session_id, str(e))
-        manager.disconnect(session_id)
-        return
-
-    try:
-        await _handle_messages(session_id, engine)
+        await _handle_messages(session_id, orchestrator)
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for session {session_id}")
     except Exception as e:
@@ -200,7 +198,7 @@ def _parse_incoming_message(data: dict) -> WSIncomingMessage:
         )
 
 
-async def _handle_messages(session_id: str, engine: ConversationEngine) -> None:
+async def _handle_messages(session_id: str, orchestrator: SAGEOrchestrator) -> None:
     """Process incoming messages in the WebSocket loop."""
     websocket = manager.active_connections.get(session_id)
     if not websocket:
@@ -211,36 +209,48 @@ async def _handle_messages(session_id: str, engine: ConversationEngine) -> None:
         msg = _parse_incoming_message(data)
 
         if msg.type == "form_submission":
-            await _process_form_submission(session_id, engine, msg)
-        elif msg.type == "voice" and not msg.content:
-            await manager.send_error(session_id, "Voice transcription not yet implemented")
+            await _process_form_submission(session_id, orchestrator, msg)
         elif msg.content:
-            await _process_message(session_id, engine, msg.content)
+            # Determine modality from message flags
+            modality = InputModality.VOICE if msg.is_voice else InputModality.CHAT
+            await _process_message(session_id, orchestrator, msg.content, modality)
         else:
             await manager.send_error(session_id, "Empty message")
 
 
 async def _stream_response(
     session_id: str,
-    engine: ConversationEngine,
+    orchestrator: SAGEOrchestrator,
     content: str,
+    modality: InputModality,
+    *,
+    form_id: str | None = None,
+    form_data: dict[str, Any] | None = None,
 ) -> None:
-    """Process content through the engine and stream the response."""
+    """Process content through the orchestrator and stream the response."""
     async def on_chunk(chunk: str) -> None:
         await manager.send_chunk(session_id, chunk)
 
-    response = await engine.process_turn_streaming(content, on_chunk=on_chunk)
+    response = await orchestrator.process_input(
+        raw_input=content,
+        source_modality=modality,
+        session_id=session_id,
+        form_id=form_id,
+        form_data=form_data,
+        on_chunk=on_chunk,
+    )
     await manager.send_complete(session_id, _response_to_dict(response))
 
 
 async def _process_message(
     session_id: str,
-    engine: ConversationEngine,
+    orchestrator: SAGEOrchestrator,
     content: str,
+    modality: InputModality,
 ) -> None:
-    """Process a text message and send response via streaming."""
+    """Process a text or voice message and send response via streaming."""
     try:
-        await _stream_response(session_id, engine, content)
+        await _stream_response(session_id, orchestrator, content, modality)
     except Exception as e:
         logger.error(f"Error processing message: {e}")
         await manager.send_error(session_id, str(e))
@@ -248,17 +258,25 @@ async def _process_message(
 
 async def _process_form_submission(
     session_id: str,
-    engine: ConversationEngine,
+    orchestrator: SAGEOrchestrator,
     msg: WSIncomingMessage,
 ) -> None:
-    """Process a form submission by converting to natural language."""
+    """Process a form submission through the orchestrator."""
     if not msg.form_id or not msg.data:
         await manager.send_error(session_id, "Invalid form submission: missing form_id or data")
         return
 
     try:
-        form_description = _form_data_to_message(msg.form_id, msg.data)
-        await _stream_response(session_id, engine, form_description)
+        # Route through orchestrator with FORM modality
+        # The orchestrator handles form normalization and validation
+        await _stream_response(
+            session_id,
+            orchestrator,
+            content="",  # Empty for form submissions
+            modality=InputModality.FORM,
+            form_id=msg.form_id,
+            form_data=msg.data,
+        )
     except Exception as e:
         logger.error(f"Error processing form submission: {e}")
         await manager.send_error(session_id, str(e))
