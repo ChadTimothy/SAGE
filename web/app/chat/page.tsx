@@ -14,12 +14,12 @@ import {
   ChatInput,
   StreamingIndicator,
   EmptyState,
+  InlineCheckIn,
+  InlinePracticeSetup,
 } from "@/components/chat";
-import { CheckInModal } from "@/components/sidebar";
 import { VoiceOutputToggle, VoiceSelector } from "@/components/voice";
 import {
   PracticeModeContainer,
-  PracticeScenarioSetup,
   PracticeFeedback,
   PracticeMessageBubble,
 } from "@/components/practice";
@@ -62,7 +62,8 @@ export default function ChatPage(): JSX.Element {
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [showCheckIn, setShowCheckIn] = useState(true);
+  const [showInlineCheckIn, setShowInlineCheckIn] = useState(true);
+  const [showInlinePracticeSetup, setShowInlinePracticeSetup] = useState(false);
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null);
   const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(false);
   const lastVoicedMessageIdRef = useRef<string | null>(null);
@@ -134,7 +135,7 @@ export default function ChatPage(): JSX.Element {
       });
       setSessionId(session.id);
       setSessionContext(context);
-      setShowCheckIn(false);
+      setShowInlineCheckIn(false);
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : "Failed to create session");
     } finally {
@@ -241,12 +242,6 @@ export default function ChatPage(): JSX.Element {
 
   return (
     <div className="flex flex-col h-full">
-      <CheckInModal
-        isOpen={showCheckIn && !sessionContext}
-        onClose={() => setShowCheckIn(false)}
-        onComplete={handleCheckInComplete}
-        isLoading={isCreatingSession}
-      />
 
       {/* Session creation error banner */}
       {sessionError && (
@@ -275,8 +270,8 @@ export default function ChatPage(): JSX.Element {
         </div>
         <div className="flex items-center gap-4">
           <button
-            onClick={practice.openSetup}
-            disabled={practice.isActive}
+            onClick={() => setShowInlinePracticeSetup(true)}
+            disabled={practice.isActive || showInlinePracticeSetup}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm",
               "bg-amber-100 dark:bg-amber-900/30",
@@ -329,10 +324,34 @@ export default function ChatPage(): JSX.Element {
               </AnimatePresence>
               <div ref={messagesEndRef} />
             </div>
-          ) : messages.length === 0 && !isTyping ? (
-            <EmptyState onSuggestionClick={handleSuggestionClick} />
           ) : (
+            // Regular chat mode - inline forms and messages in feed
             <div className="p-6 space-y-4 max-w-4xl mx-auto">
+              {/* Inline Check-In Form */}
+              {showInlineCheckIn && !sessionContext && (
+                <InlineCheckIn
+                  onComplete={handleCheckInComplete}
+                  isLoading={isCreatingSession}
+                />
+              )}
+
+              {/* Inline Practice Setup */}
+              {showInlinePracticeSetup && (
+                <InlinePracticeSetup
+                  onStart={(scenario) => {
+                    setShowInlinePracticeSetup(false);
+                    practice.startPractice(scenario);
+                  }}
+                  onCancel={() => setShowInlinePracticeSetup(false)}
+                />
+              )}
+
+              {/* Empty state only when connected but no messages and no inline forms */}
+              {messages.length === 0 && !isTyping && !showInlineCheckIn && !showInlinePracticeSetup && sessionContext && (
+                <EmptyState onSuggestionClick={handleSuggestionClick} />
+              )}
+
+              {/* Messages */}
               <AnimatePresence mode="popLayout">
                 {messages.map((message, index) => (
                   <MessageBubble
@@ -368,13 +387,7 @@ export default function ChatPage(): JSX.Element {
         interimTranscript={transcript}
       />
 
-      {/* Practice Mode Modals */}
-      <PracticeScenarioSetup
-        isOpen={practice.showSetup}
-        onClose={practice.closeSetup}
-        onStart={practice.startPractice}
-      />
-
+      {/* Practice Feedback Modal - kept as modal since it's shown after practice ends */}
       <PracticeFeedback
         isOpen={practice.showFeedback}
         feedback={practice.feedback}
