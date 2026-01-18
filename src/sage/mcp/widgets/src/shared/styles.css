@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base widget styles */
+:root {
+  --widget-bg: #ffffff;
+  --widget-text: #1f2937;
+  --widget-border: #e5e7eb;
+  --widget-primary: #22c55e;
+  --widget-primary-hover: #16a34a;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --widget-bg: #1f2937;
+    --widget-text: #f9fafb;
+    --widget-border: #374151;
+    --widget-primary: #4ade80;
+    --widget-primary-hover: #22c55e;
+  }
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--widget-bg);
+  color: var(--widget-text);
+}
+
+/* Widget container */
+.widget-container {
+  @apply p-4 min-h-screen;
+}
+
+/* Card styles */
+.widget-card {
+  @apply bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 border border-gray-200 dark:border-gray-700;
+}
+
+/* Button styles */
+.widget-btn {
+  @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200;
+}
+
+.widget-btn-primary {
+  @apply bg-sage-500 text-white hover:bg-sage-600;
+}
+
+.widget-btn-secondary {
+  @apply bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600;
+}
+
+/* Form elements */
+.widget-input {
+  @apply w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:ring-2 focus:ring-sage-500 focus:border-transparent;
+}
+
+.widget-label {
+  @apply block text-sm font-medium mb-1;
+}
