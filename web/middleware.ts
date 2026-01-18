@@ -31,12 +31,13 @@ export const config = {
   matcher: [
     /*
      * Match all paths except:
-     * - api/auth (NextAuth routes need to be accessible)
+     * - api/* (all API routes - NextAuth and proxied backend routes)
+     *   Backend handles its own auth via Authorization header
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico
      * - public files (images, etc.)
      */
-    "/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.svg$).*)",
+    "/((?!api/|_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.svg$).*)",
   ],
 };

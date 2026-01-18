@@ -131,8 +131,11 @@ export const authOptions: NextAuthOptions = {
 };
 
 /**
- * Get the JWT token for API requests.
- * This is used by API clients to include the Authorization header.
+ * Get the JWT token for API requests and WebSocket connections.
+ *
+ * This calls the /api/ws-token endpoint which reads the httpOnly
+ * session cookie server-side and returns it. This is necessary
+ * because httpOnly cookies cannot be read via JavaScript.
  *
  * The token is the NextAuth session token which contains the user's
  * id, learner_id, email, and name - all needed by the backend.
@@ -144,20 +147,19 @@ export async function getAuthToken(): Promise<string | null> {
   }
 
   try {
-    // Get the raw session token from the cookie
-    // NextAuth stores it as next-auth.session-token (or __Secure- prefix in production)
-    const cookies = document.cookie.split(";");
-    for (const cookie of cookies) {
-      const [name, value] = cookie.trim().split("=");
-      if (
-        name === "next-auth.session-token" ||
-        name === "__Secure-next-auth.session-token"
-      ) {
-        return decodeURIComponent(value);
-      }
+    // Fetch token from server-side API (which can read httpOnly cookies)
+    const response = await fetch("/api/ws-token", {
+      credentials: "include", // Include cookies in request
+    });
+
+    if (!response.ok) {
+      return null;
     }
-    return null;
-  } catch {
+
+    const data = await response.json();
+    return data.token || null;
+  } catch (error) {
+    console.error("Failed to get auth token:", error);
     return null;
   }
 }
