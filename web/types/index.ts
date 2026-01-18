@@ -45,6 +45,8 @@ export interface ChatMessage {
   ui_tree?: UITreeNode;
   /** Pending data request for multi-turn collection (assistant messages only) */
   pending_data_request?: PendingDataRequest;
+  /** Extracted values from voice input to update form fields visually (assistant messages only) */
+  form_field_updates?: Record<string, unknown>;
 }
 
 export type DialogueMode =
@@ -210,6 +212,12 @@ export interface WSCompleteMessage {
     ui_purpose: string | null;
     estimated_interaction_time: number | null;
     graph_filter_update: GraphFilterUpdate | null;
+    /**
+     * Extracted values from voice input to update form fields visually.
+     * Keys are form field IDs, values are the extracted data.
+     * Frontend should use these to prefill form fields when present.
+     */
+    form_field_updates: Record<string, unknown> | null;
   };
 }
 

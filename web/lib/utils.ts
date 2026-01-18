@@ -84,3 +84,83 @@ export function safeJsonParse<T>(json: string, fallback: T): T {
     return fallback;
   }
 }
+
+/**
+ * Convert energy level number to descriptive text for TTS
+ */
+function energyLevelToText(level: number): string {
+  if (level < 40) return "low";
+  if (level < 70) return "medium";
+  return "high";
+}
+
+/**
+ * Convert time available value to natural language
+ */
+function timeAvailableToText(time: string): string {
+  const timeMap: Record<string, string> = {
+    quick: "about 15 minutes",
+    focused: "about 30 minutes",
+    deep: "an hour or more",
+  };
+  return timeMap[time] || time;
+}
+
+/**
+ * Format form data as a human-readable, TTS-friendly message.
+ * This ensures form submissions appear sensibly in the chat feed
+ * when read aloud to someone using voice output.
+ */
+export function formatFormDataAsMessage(
+  formId: string,
+  data: Record<string, unknown>
+): string {
+  const formIdLower = formId.toLowerCase();
+
+  // Session check-in form
+  if (formIdLower.includes("check_in") || formIdLower.includes("check-in")) {
+    const parts: string[] = [];
+
+    if (data.timeAvailable) {
+      parts.push(`I have ${timeAvailableToText(String(data.timeAvailable))}`);
+    }
+
+    if (data.energyLevel !== undefined) {
+      const level = Number(data.energyLevel);
+      parts.push(`my energy is ${energyLevelToText(level)}`);
+    }
+
+    if (data.mindset) {
+      parts.push(`and ${data.mindset}`);
+    }
+
+    return parts.length > 0 ? parts.join(", ") + "." : "Starting session.";
+  }
+
+  // Verification/quiz form
+  if (formIdLower.includes("verification") || formIdLower.includes("quiz")) {
+    if (data.answer !== undefined) {
+      return `My answer is: ${data.answer}`;
+    }
+  }
+
+  // Generic form - convert to natural key-value description
+  const parts = Object.entries(data)
+    .filter(([key, value]) => {
+      // Skip internal fields and empty values
+      if (key.startsWith("_")) return false;
+      if (value === null || value === undefined || value === "") return false;
+      return true;
+    })
+    .map(([key, value]) => {
+      // Convert camelCase/snake_case to readable format
+      const readableKey = key
+        .replace(/([A-Z])/g, " $1")
+        .replace(/_/g, " ")
+        .toLowerCase()
+        .trim();
+      return `${readableKey}: ${value}`;
+    });
+
+  return parts.length > 0 ? parts.join(", ") : "Form submitted.";
+}
