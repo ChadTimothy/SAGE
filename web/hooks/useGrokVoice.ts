@@ -32,6 +32,8 @@ export interface UseGrokVoiceOptions {
   onResponse?: (text: string) => void;
   onError?: (error: VoiceError) => void;
   onFallback?: () => void;
+  /** Called when SAGE finishes speaking (for continuous voice mode) */
+  onSpeechEnd?: () => void;
   /** Max reconnection attempts (default: 3) */
   maxReconnectAttempts?: number;
   /** Voice timeout in ms (default: 10000) */
@@ -57,6 +59,8 @@ export interface UseGrokVoiceReturn {
   isFallbackMode: boolean;
   clearError: () => void;
   retry: () => Promise<void>;
+  /** Resume AudioContext after user gesture (needed for Safari/Chrome autoplay policy) */
+  resumeAudioContext: () => Promise<void>;
 }
 
 // Configuration
@@ -135,6 +139,7 @@ export function useGrokVoice({
   onResponse,
   onError,
   onFallback,
+  onSpeechEnd,
   maxReconnectAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS,
   voiceTimeoutMs = DEFAULT_VOICE_TIMEOUT_MS,
 }: UseGrokVoiceOptions): UseGrokVoiceReturn {
@@ -209,14 +214,30 @@ export function useGrokVoice({
     }, voiceTimeoutMs);
   }, [clearVoiceTimeout, handleError, voiceTimeoutMs]);
 
+  // Resume AudioContext (needed for browser autoplay policy)
+  const resumeAudioContext = useCallback(async () => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+    }
+    if (audioContextRef.current.state === "suspended") {
+      await audioContextRef.current.resume();
+    }
+  }, []);
+
   // Play received audio
-  const playAudio = useCallback((base64Audio: string) => {
+  const playAudio = useCallback(async (base64Audio: string) => {
     try {
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext({ sampleRate: 24000 });
       }
 
       const audioContext = audioContextRef.current;
+
+      // Resume if suspended (browser autoplay policy)
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+
       const binaryString = atob(base64Audio);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
@@ -289,6 +310,7 @@ export function useGrokVoice({
 
         case "response.audio.done":
           setStatus("connected");
+          onSpeechEnd?.();
           break;
 
         case "error": {
@@ -304,7 +326,7 @@ export function useGrokVoice({
         }
       }
     },
-    [onTranscript, onResponse, playAudio, handleError, clearVoiceTimeout]
+    [onTranscript, onResponse, onSpeechEnd, playAudio, handleError, clearVoiceTimeout]
   );
 
   // Schedule reconnection with exponential backoff
@@ -652,5 +674,6 @@ export function useGrokVoice({
     isFallbackMode,
     clearError,
     retry: connect,
+    resumeAudioContext,
   };
 }

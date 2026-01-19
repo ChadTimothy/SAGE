@@ -63,6 +63,18 @@ class Settings(BaseSettings):
         description="Secret for NextAuth.js JWT signing (required for auth)",
     )
 
+    # OAuth 2.1 Configuration (for ChatGPT App)
+    oauth_signing_key: str = Field(
+        default="",
+        validation_alias="OAUTH_SIGNING_KEY",
+        description="Signing key for OAuth 2.1 JWTs (defaults to NEXTAUTH_SECRET)",
+    )
+    oauth_base_url: str = Field(
+        default="http://localhost:8000",
+        validation_alias="OAUTH_BASE_URL",
+        description="Base URL for OAuth endpoints (used in metadata)",
+    )
+
     @property
     def log_level_int(self) -> int:
         """Get log level as integer for logging module."""

@@ -66,7 +66,13 @@ export default function ChatPage(): JSX.Element {
   const [showInlinePracticeSetup, setShowInlinePracticeSetup] = useState(false);
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null);
   const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(false);
+  const voiceOutputEnabledRef = useRef(false);
   const lastVoicedMessageIdRef = useRef<string | null>(null);
+
+  // Keep ref in sync with state for use in callbacks
+  useEffect(() => {
+    voiceOutputEnabledRef.current = voiceOutputEnabled;
+  }, [voiceOutputEnabled]);
 
   // Only connect WebSocket after we have a real session ID from the API
   const { messages, status, isTyping, sendMessage, sendFormSubmission, isConnected } = useChat({
@@ -98,6 +104,7 @@ export default function ChatPage(): JSX.Element {
     setVoice,
     currentVoice,
     error: voiceError,
+    resumeAudioContext,
   } = useGrokVoice({
     sessionId: sessionId || "",
     onTranscript: (text, isFinal) => {
@@ -116,6 +123,13 @@ export default function ChatPage(): JSX.Element {
     },
     onError: (error) => {
       console.error("Grok voice error:", error);
+    },
+    onSpeechEnd: () => {
+      // Continuous voice mode: auto-start listening after SAGE finishes speaking
+      // Use ref to avoid stale closure
+      if (voiceOutputEnabledRef.current) {
+        startListening();
+      }
     },
   });
 
@@ -185,11 +199,29 @@ export default function ChatPage(): JSX.Element {
     const newEnabled = !voiceOutputEnabled;
     setVoiceOutputEnabled(newEnabled);
 
-    // Connect to Grok Voice when enabling voice output
-    if (newEnabled && !voiceConnected) {
-      await connectVoice();
+    if (newEnabled) {
+      // Resume AudioContext on user gesture (required for browser autoplay policy)
+      await resumeAudioContext();
+
+      // Connect to Grok Voice when enabling voice output
+      if (!voiceConnected) {
+        await connectVoice();
+      }
+
+      // Start listening immediately in continuous voice mode
+      // Small delay to ensure connection is established
+      setTimeout(() => {
+        if (!isListening) {
+          startListening();
+        }
+      }, 500);
+    } else {
+      // When disabling voice mode, stop listening
+      if (isListening) {
+        stopListening();
+      }
     }
-  }, [voiceOutputEnabled, voiceConnected, connectVoice]);
+  }, [voiceOutputEnabled, voiceConnected, connectVoice, resumeAudioContext, isListening, startListening, stopListening]);
 
   // Generate a stable ID for messages to track which have been voiced
   const lastAssistantMessageId = useMemo(() => {
